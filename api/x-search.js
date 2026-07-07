@@ -6,7 +6,8 @@
 
 export default async function handler(req, res) {
   const { query = 'AI', max_results = '20' } = req.query;
-  const mr = Math.min(100, Math.max(5, parseInt(max_results, 10) || 20));
+  const parsed = parseInt(max_results, 10)
+  const mr = Math.min(100, Math.max(10, Number.isFinite(parsed) ? parsed : 20))
 
   const token = process.env.X_BEARER_TOKEN;
   if (!token) {
