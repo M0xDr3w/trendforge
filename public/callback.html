@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OAuth Callback - TrendForge</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 20px;
+      line-height: 1.6;
+      background: #111;
+      color: #eee;
+    }
+    .box {
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 24px;
+    }
+    h1 { margin-top: 0; color: #fff; }
+    .instruction {
+      background: #1a1a1a;
+      padding: 16px;
+      border-radius: 6px;
+      margin: 16px 0;
+    }
+    code {
+      background: #333;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+    .success {
+      color: #4ade80;
+    }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>✅ OAuth Callback Received</h1>
+    
+    <p>This is the callback page for TrendForge's X (Twitter) authentication.</p>
+    
+    <div class="instruction">
+      <p><strong>Next step:</strong></p>
+      <ol>
+        <li>Copy the <strong>entire URL</strong> from your browser's address bar (it contains the authorization code).</li>
+        <li>Go back to your terminal where you ran the auth command.</li>
+        <li>Paste the full URL (or just the code part) and press Enter.</li>
+      </ol>
+    </div>
+
+    <p>The code is in the URL after <code>?code=</code> (you can copy the whole thing).</p>
+    
+    <p class="success">Once pasted, xurl will complete the login and cache your token.</p>
+    
+    <p><a href="/">← Back to TrendForge</a></p>
+  </div>
+
+  <script>
+    // Optional: auto-copy the current URL to clipboard if user clicks anywhere
+    document.addEventListener('click', () => {
+      navigator.clipboard.writeText(window.location.href).then(() => {
+        const msg = document.createElement('div');
+        msg.textContent = 'URL copied to clipboard!';
+        msg.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#4ade80;padding:8px 16px;border-radius:4px;';
+        document.body.appendChild(msg);
+        setTimeout(() => msg.remove(), 2000);
+      }).catch(() => {});
+    });
+  </script>
+</body>
+</html>
