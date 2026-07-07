@@ -1,6 +1,7 @@
 import type { XPost, Cluster } from './types'
 import { KEYWORD_BUCKETS } from './config'
 import { computeVelocity } from './insights'
+import { clusterPostsSemantically } from './semantic'
 
 export function computeClusters(
   posts: XPost[],
@@ -23,7 +24,16 @@ export function computeClusters(
 
   const remaining = posts.filter(p => !used.has(p.id))
   if (remaining.length > 0) {
-    clusters['Other Signals'] = remaining
+    const semanticGroups = clusterPostsSemantically(remaining)
+    if (semanticGroups.length <= 1) {
+      clusters['Other Signals'] = remaining
+    } else {
+      semanticGroups.forEach(group => {
+        const key = group.posts.length === 1 ? 'Other Signals' : group.label
+        const existing = clusters[key]
+        clusters[key] = existing ? [...existing, ...group.posts] : group.posts
+      })
+    }
   }
 
   return Object.entries(clusters).map(([name, clusterPosts], idx) => {

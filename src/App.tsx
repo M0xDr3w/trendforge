@@ -8,6 +8,7 @@ import { computeClusters, buildVolumeSnapshot } from './lib/clusters'
 import { detectInsights, forgeContent } from './lib/narrative'
 import { generateSparks } from './lib/insights'
 import { seedPosts, generateMockPost, fetchRealPosts, mergePosts } from './lib/feed'
+import { AnalyticsSidebar } from './components/AnalyticsSidebar'
 import type { XPost, Cluster } from './lib/types'
 
 function App() {
@@ -113,7 +114,10 @@ Using xapi MCP tools, analyze this X cluster and suggest 3 unique, timely conten
 Cluster data:
 ${summary}`
     navigator.clipboard?.writeText(prompt).catch(() => {})
-    toast.success('Prompt copied — paste to Grok (xapi MCP must be connected) for advanced X analysis')
+    toast.success('Prompt copied for Grok + xapi MCP', {
+      description: 'MCP not connected? Run: bash scripts/setup-xapi-mcp.sh',
+      duration: 5000,
+    })
   }
 
   const exportState = () => {
@@ -354,7 +358,16 @@ Tags: trendforge,signals,forge`).catch(() => {})
             </div>
           </div>
 
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-3 space-y-4">
+            <AnalyticsSidebar
+              posts={posts}
+              clusters={clusters}
+              onSelectCluster={(name) => {
+                const match = clusters.find(c => c.name === name)
+                if (match) setSelectedCluster(match)
+              }}
+            />
+
             <div className="hud text-xs tracking-[2px] text-[#666] mb-3">INSIGHTS &amp; GAPS</div>
             <div className="space-y-2 mb-6">
               {insights.map((ins, idx) => (

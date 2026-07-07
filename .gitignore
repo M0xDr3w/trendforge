@@ -30,3 +30,5 @@ pnpm-debug.log*
 .env.local
 .env.*.local
 X_BEARER_TOKEN
+.grok/config.toml
+.vercel

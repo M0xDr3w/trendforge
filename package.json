@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "setup:mcp": "bash scripts/setup-xapi-mcp.sh"
   },
   "dependencies": {
     "framer-motion": "^12.42.0",
