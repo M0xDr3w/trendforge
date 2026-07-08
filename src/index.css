@@ -59,24 +59,28 @@ textarea:-webkit-autofill {
   transition: background-color 9999s ease-out 0s;
 }
 
-.tf-field {
-  width: 100%;
-  border-radius: var(--radius-sm);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.9375rem;
-  line-height: 1.4;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
+/* Layered so per-instance Tailwind utilities (e.g. pl-9, py-2, rounded-*) can
+   still override these defaults — unlayered CSS otherwise beats the utilities layer. */
+@layer components {
+  .tf-field {
+    width: 100%;
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
 
-.tf-field:focus {
-  outline: none;
-  border-color: var(--cyan);
-  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.25);
-}
+  .tf-field:focus {
+    outline: none;
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.25);
+  }
 
-.tf-field:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
+  .tf-field:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
 }
 
 .font-display {

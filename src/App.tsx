@@ -81,6 +81,8 @@ function App() {
   const [alertsEnabled, setAlertsEnabled] = useState(() => loadAlertsEnabled())
   const [browserNotify, setBrowserNotify] = useState(() => loadBrowserNotify())
   const liveRealToastShownRef = useRef(false)
+  const dismissedErrorCodeRef = useRef<string | null>(null)
+  const forgeInFlightRef = useRef(false)
   const shiftNotifiedRef = useRef<Record<string, number>>({})
 
   const clusters = computeClusters(posts, history)
@@ -120,15 +122,36 @@ function App() {
 
   const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
-  const reportXApiFailure = useCallback((error: XApiError, context?: string) => {
+  // Surface an error for the banner. Re-open the banner only when the error is
+  // new — a banner the user dismissed shouldn't reappear every live-real poll
+  // while the same error persists.
+  const surfaceXApiError = useCallback((error: XApiError) => {
     setXApiStatus('error')
     setLastXApiError(error)
-    setXApiBannerDismissed(false)
-    showXApiErrorToast(error)
-    if (context) {
-      toast.error(context, { description: error.message, duration: 8000 })
+    if (error.code !== dismissedErrorCodeRef.current) {
+      setXApiBannerDismissed(false)
     }
   }, [])
+
+  const clearXApiError = useCallback(() => {
+    setLastXApiError(null)
+    dismissedErrorCodeRef.current = null
+  }, [])
+
+  const dismissXApiBanner = useCallback(() => {
+    dismissedErrorCodeRef.current = lastXApiError?.code ?? null
+    setXApiBannerDismissed(true)
+  }, [lastXApiError])
+
+  const reportXApiFailure = useCallback((error: XApiError, context?: string) => {
+    surfaceXApiError(error)
+    // One toast only: a context message replaces the default error toast.
+    if (context) {
+      toast.error(context, { description: error.hint, duration: 8000 })
+    } else {
+      showXApiErrorToast(error)
+    }
+  }, [surfaceXApiError])
 
   const fetchRadarPosts = useCallback(
     async (query: string, radarName: string) => {
@@ -179,19 +202,17 @@ function App() {
     const id = setInterval(async () => {
       const { posts: fresh, error } = await fetchRealPosts(config.liveRealQuery, { silent: true })
       if (error) {
-        setXApiStatus('error')
-        setLastXApiError(error)
-        setXApiBannerDismissed(false)
+        surfaceXApiError(error)
         return
       }
       if (fresh.length > 0) {
         setXApiStatus('connected')
-        setLastXApiError(null)
+        clearXApiError()
         setPosts(prev => mergePosts(prev, fresh))
       }
     }, config.liveRealPollMs)
     return () => clearInterval(id)
-  }, [liveReal])
+  }, [liveReal, surfaceXApiError, clearXApiError])
 
   useEffect(() => {
     if (!isRunning) return
@@ -231,6 +252,10 @@ function App() {
   }
 
   const forge = useCallback(async () => {
+    // Block re-entry so rapid taps can't launch overlapping LLM requests.
+    if (forgeInFlightRef.current) return
+    forgeInFlightRef.current = true
+
     const currentSparks = selectedCluster
       ? generateSparks({ name: selectedCluster.name, category: selectedCluster.name })
       : []
@@ -238,29 +263,33 @@ function App() {
 
     let ideas: string[]
 
-    if (forgeMode === 'llm' && forgeUrl.trim()) {
-      setLlmLoading(true)
-      try {
-        const prompt = buildForgePrompt(selectedCluster, currentSparks, insights, customTopic || undefined)
-        const response = await callForgeLlm(forgeUrl.trim(), prompt)
-        ideas = parseForgeResponse(response)
-        toast.success('LLM forged content', { description: ideas[0]?.slice(0, 75) + '...' })
-      } catch (err) {
+    try {
+      if (forgeMode === 'llm' && forgeUrl.trim()) {
+        setLlmLoading(true)
+        try {
+          const prompt = buildForgePrompt(selectedCluster, currentSparks, insights, customTopic || undefined)
+          const response = await callForgeLlm(forgeUrl.trim(), prompt)
+          ideas = parseForgeResponse(response)
+          toast.success('LLM forged content', { description: ideas[0]?.slice(0, 75) + '...' })
+        } catch (err) {
+          ideas = forgeContent(selectedCluster, customTopic || undefined)
+          toast.error('LLM forge failed — using templates', {
+            description: err instanceof Error ? err.message : 'Unknown error',
+          })
+        } finally {
+          setLlmLoading(false)
+        }
+      } else {
         ideas = forgeContent(selectedCluster, customTopic || undefined)
-        toast.error('LLM forge failed — using templates', {
-          description: err instanceof Error ? err.message : 'Unknown error',
-        })
-      } finally {
-        setLlmLoading(false)
+        toast.success('Content forged', { description: ideas[0].slice(0, 75) + '...' })
       }
-    } else {
-      ideas = forgeContent(selectedCluster, customTopic || undefined)
-      toast.success('Content forged', { description: ideas[0].slice(0, 75) + '...' })
-    }
 
-    navigator.clipboard?.writeText(ideas.join('\n\n') + sparkNote).catch(() => {})
-    setForgedFlash(true)
-    window.setTimeout(() => setForgedFlash(false), 900)
+      navigator.clipboard?.writeText(ideas.join('\n\n') + sparkNote).catch(() => {})
+      setForgedFlash(true)
+      window.setTimeout(() => setForgedFlash(false), 900)
+    } finally {
+      forgeInFlightRef.current = false
+    }
   }, [selectedCluster, customTopic, forgeMode, forgeUrl, insights])
 
   const copyForgePrompt = useCallback(() => {
@@ -366,7 +395,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
     }
     if (realPosts.length > 0) {
       setXApiStatus('connected')
-      setLastXApiError(null)
+      clearXApiError()
       setPosts(prev => mergePosts(prev, realPosts))
       setRadars(prev => updateRadarLastSynced(prev, radar.id))
       setFeedSearch('')
@@ -422,7 +451,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
       }
       if (realPosts.length > 0) {
         setXApiStatus('connected')
-        setLastXApiError(null)
+        clearXApiError()
         setPosts(prev => mergePosts(prev, realPosts))
         setRadars(prev => updateRadarLastSynced(prev, radar.id))
         merged += realPosts.length
@@ -451,7 +480,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
     }
     if (realPosts.length > 0) {
       setXApiStatus('connected')
-      setLastXApiError(null)
+      clearXApiError()
       setPosts(prev => mergePosts(prev, realPosts))
       setFeedSearch('')
       toast.success(`Synced ${realPosts.length} real posts from X (merged)`)
@@ -467,8 +496,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
     }
     if (testPosts.length > 0) {
       setXApiStatus('connected')
-      setLastXApiError(null)
-      setXApiBannerDismissed(true)
+      clearXApiError()
       toast.success(`Proxy OK — got ${testPosts.length} real posts. First: ${testPosts[0].text.slice(0, 60)}...`)
     } else {
       setXApiStatus('error')
@@ -529,7 +557,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
           <motion.div variants={sectionVariants}>
             <XApiStatusBanner
               error={lastXApiError}
-              onDismiss={() => setXApiBannerDismissed(true)}
+              onDismiss={dismissXApiBanner}
               onRetryTest={testRealConnection}
             />
           </motion.div>
@@ -602,7 +630,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
         </div>
       </motion.div>
 
-      <MobileActionBar onSyncReal={syncReal} onForge={forge} />
+      <MobileActionBar onSyncReal={syncReal} onForge={forge} forgeLoading={llmLoading} />
     </div>
   )
 }

@@ -50,6 +50,13 @@ ${sparks.length > 0 ? `Sparks:\n${sparks.map(s => `- ${s}`).join('\n')}\n` : ''}
 Return exactly 5 numbered angles (1. ... 2. ...) — hooks, thread starters, or newsletter ledes. Be specific, contrarian where useful, no generic filler.`
 }
 
+export class ForgeParseError extends Error {
+  constructor(message = 'Could not parse a structured response from the LLM') {
+    super(message)
+    this.name = 'ForgeParseError'
+  }
+}
+
 export function parseForgeResponse(text: string): string[] {
   const numbered = [...text.matchAll(/^\s*\d+[.)]\s*(.+)$/gm)].map(m => m[1].trim()).filter(Boolean)
   if (numbered.length >= 2) return numbered.slice(0, 6)
@@ -60,7 +67,9 @@ export function parseForgeResponse(text: string): string[] {
     .filter(l => l.length > 20)
 
   if (lines.length >= 2) return lines.slice(0, 6)
-  return templateForgeContent(null, undefined)
+  // Signal the caller so it can surface "couldn't parse" instead of silently
+  // returning generic templates that look like real LLM output.
+  throw new ForgeParseError()
 }
 
 export const FORGE_LLM_TIMEOUT_MS = 30_000

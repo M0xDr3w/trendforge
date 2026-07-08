@@ -122,7 +122,7 @@ export function ForgePanel({
         variant="ghost"
         fullWidth
         size="sm"
-        className="mt-2 hidden lg:flex"
+        className="mt-2 flex"
         aria-label="Copy LLM forge prompt to clipboard"
       >
         Copy forge prompt
