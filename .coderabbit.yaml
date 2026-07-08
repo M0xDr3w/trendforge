@@ -1,0 +1,6 @@
+# CodeRabbit config — https://docs.coderabbit.ai/reference/configuration
+reviews:
+  auto_review:
+    enabled: true
+    base_branches:
+      - "review/.*"
