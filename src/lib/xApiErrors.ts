@@ -44,7 +44,7 @@ const ERROR_MAP: Record<XApiErrorCode, { message: string; hint: string }> = {
   },
   invalid_max_results: {
     message: 'Invalid search request',
-    hint: 'max_results must be between 10 and 100 per X API limits.',
+    hint: 'max_results must be between 1 and 100. Values below 10 fetch 10 from X and slice the response.',
   },
   rate_limit: {
     message: 'X API rate limit reached',

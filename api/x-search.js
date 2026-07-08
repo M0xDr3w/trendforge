@@ -27,7 +27,7 @@ function parseXApiError(httpStatus, bodyText) {
     return {
       code: 'invalid_max_results',
       error: 'Invalid max_results parameter',
-      hint: 'max_results must be between 10 and 100.',
+      hint: 'max_results must be between 1 and 100. Values below 10 fetch 10 from X and slice the response.',
     }
   }
   if (apiStatus === 429) {
@@ -69,18 +69,19 @@ function parseXApiError(httpStatus, bodyText) {
 export default async function handler(req, res) {
   const { query = 'AI', max_results = '20' } = req.query
   const parsed = parseInt(max_results, 10)
+  const requested = Number.isFinite(parsed) ? parsed : 20
 
-  if (Number.isFinite(parsed) && (parsed < 10 || parsed > 100)) {
+  if (Number.isFinite(parsed) && (parsed < 1 || parsed > 100)) {
     return sendError(
       res,
       400,
       'invalid_max_results',
       'Invalid max_results parameter',
-      'max_results must be between 10 and 100.',
+      'max_results must be between 1 and 100. X API requires fetching at least 10; smaller values are sliced after fetch.',
     )
   }
 
-  const mr = Math.min(100, Math.max(10, Number.isFinite(parsed) ? parsed : 20))
+  const mr = Math.min(100, Math.max(10, requested))
 
   const token = process.env.X_BEARER_TOKEN
   if (!token) {
@@ -133,7 +134,7 @@ export default async function handler(req, res) {
       }
     })
 
-    res.json(posts)
+    res.json(posts.slice(0, requested))
   } catch (err) {
     return sendError(
       res,

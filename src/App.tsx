@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { config } from './lib/config'
@@ -17,17 +17,31 @@ import {
   saveForgeUrl,
   type ForgeMode,
 } from './lib/forge'
-import { AnalyticsSidebar } from './components/AnalyticsSidebar'
 import { Header } from './components/Header'
 import { FeedPanel } from './components/FeedPanel'
 import { ClusterPanel } from './components/ClusterPanel'
 import { InsightsPanel } from './components/InsightsPanel'
 import { ForgePanel } from './components/ForgePanel'
-import { VolumeChart } from './components/VolumeChart'
+import { Panel } from './components/ui'
 import { MobileActionBar } from './components/MobileActionBar'
 import { pageVariants, sectionVariants, type ConnectionStatus } from './components/motion'
 import type { XApiConnectionStatus } from './lib/xApiErrors'
 import type { XPost, Cluster, SavedRadar } from './lib/types'
+
+const AnalyticsSidebar = lazy(() =>
+  import('./components/AnalyticsSidebar').then(m => ({ default: m.AnalyticsSidebar })),
+)
+const VolumeChart = lazy(() =>
+  import('./components/VolumeChart').then(m => ({ default: m.VolumeChart })),
+)
+
+function ChartSectionFallback({ label }: { label: string }) {
+  return (
+    <Panel padding="md" className="flex h-48 items-center justify-center text-xs text-[var(--muted)]">
+      Loading {label}…
+    </Panel>
+  )
+}
 
 function App() {
   const [posts, setPosts] = useState<XPost[]>(() => {
@@ -396,15 +410,17 @@ Tags: trendforge,signals,forge`).catch(() => {})
           </motion.div>
 
           <motion.div className="space-y-4 lg:col-span-3" variants={sectionVariants}>
-            <AnalyticsSidebar
-              posts={posts}
-              clusters={clusters}
-              onSyncReal={syncReal}
-              onSelectCluster={(name) => {
-                const match = clusters.find(c => c.name === name)
-                if (match) setSelectedCluster(match)
-              }}
-            />
+            <Suspense fallback={<ChartSectionFallback label="analytics" />}>
+              <AnalyticsSidebar
+                posts={posts}
+                clusters={clusters}
+                onSyncReal={syncReal}
+                onSelectCluster={(name) => {
+                  const match = clusters.find(c => c.name === name)
+                  if (match) setSelectedCluster(match)
+                }}
+              />
+            </Suspense>
             <InsightsPanel insights={insights} />
             <ForgePanel
               selectedCluster={selectedCluster}
@@ -425,7 +441,9 @@ Tags: trendforge,signals,forge`).catch(() => {})
           </motion.div>
 
           <motion.div className="mt-2 lg:col-span-12" variants={sectionVariants}>
-            <VolumeChart chartData={chartData} />
+            <Suspense fallback={<ChartSectionFallback label="volume chart" />}>
+              <VolumeChart chartData={chartData} />
+            </Suspense>
           </motion.div>
         </div>
       </motion.div>
