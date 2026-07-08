@@ -108,8 +108,12 @@ function triggerDownload(filename: string, content: string, mime: string): void 
   const a = document.createElement('a')
   a.href = url
   a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(url)
+  a.remove()
+  // Defer revocation so the browser can start the download before the URL is freed.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function delay(ms: number): Promise<void> {

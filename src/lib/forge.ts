@@ -63,21 +63,37 @@ export function parseForgeResponse(text: string): string[] {
   return templateForgeContent(null, undefined)
 }
 
+export const FORGE_LLM_TIMEOUT_MS = 30_000
+
 export async function callForgeLlm(baseUrl: string, prompt: string): Promise<string> {
   const url = baseUrl.replace(/\/$/, '') + '/v1/chat/completions'
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'default',
-      messages: [
-        { role: 'system', content: 'You write concise, high-signal social content angles.' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.8,
-      max_tokens: 800,
-    }),
-  })
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), FORGE_LLM_TIMEOUT_MS)
+
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: 'default',
+        messages: [
+          { role: 'system', content: 'You write concise, high-signal social content angles.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.8,
+        max_tokens: 800,
+      }),
+    })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`ForgeRouter request timed out after ${FORGE_LLM_TIMEOUT_MS / 1000}s`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timeoutId)
+  }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '')

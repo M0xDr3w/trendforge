@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { BarChart3, X } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import type { Cluster, XPost } from '../lib/types'
@@ -31,6 +31,22 @@ export function MobileAnalyticsDrawer({
 }: MobileAnalyticsDrawerProps) {
   const [open, setOpen] = useState(false)
   const reduceMotion = useReducedMotion()
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const trigger = triggerRef.current
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    closeButtonRef.current?.focus()
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      trigger?.focus()
+    }
+  }, [open])
 
   const sidebar = (
     <Suspense fallback={<AnalyticsFallback />}>
@@ -49,6 +65,7 @@ export function MobileAnalyticsDrawer({
 
       <div className="lg:hidden">
         <NeoButton
+          ref={triggerRef}
           onClick={() => setOpen(true)}
           variant="ghost"
           size="sm"
@@ -87,6 +104,7 @@ export function MobileAnalyticsDrawer({
                     <BarChart3 size={14} aria-hidden /> Signal analytics
                   </HudLabel>
                   <NeoButton
+                    ref={closeButtonRef}
                     onClick={() => setOpen(false)}
                     size="xs"
                     variant="ghost"

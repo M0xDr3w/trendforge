@@ -399,20 +399,26 @@ Tags: trendforge,signals,forge`).catch(() => {})
     }
     let merged = 0
     let syncedCount = 0
+    let failedCount = 0
     for (let i = 0; i < radars.length; i++) {
       const radar = radars[i]
       setSyncingRadarId(radar.id)
       const { posts: realPosts, error } = await fetchRadarPosts(radar.query, radar.name)
       if (error) {
-        setSyncingRadarId(null)
         const progress = syncedCount > 0 ? ` (${syncedCount}/${radars.length} radars synced before failure)` : ''
-        reportXApiFailure(
-          error,
-          isFatalXApiError(error.code)
-            ? `Sync all stopped at "${radar.name}"${progress}`
-            : `Sync all failed on "${radar.name}"${progress}`,
-        )
-        return
+        // Fatal errors (auth/token/credits) won't recover mid-batch — stop early.
+        if (isFatalXApiError(error.code)) {
+          setSyncingRadarId(null)
+          reportXApiFailure(error, `Sync all stopped at "${radar.name}"${progress}`)
+          return
+        }
+        // Transient errors (rate limit, network) — report and keep going.
+        failedCount += 1
+        reportXApiFailure(error, `Skipped "${radar.name}" (${error.message})`)
+        if (i < radars.length - 1) {
+          await sleep(config.syncRadarDelayMs)
+        }
+        continue
       }
       if (realPosts.length > 0) {
         setXApiStatus('connected')
@@ -428,7 +434,11 @@ Tags: trendforge,signals,forge`).catch(() => {})
     }
     setSyncingRadarId(null)
     setFeedSearch('')
-    toast.success(`Synced ${radars.length} radars`, { description: `${merged} posts merged into feed` })
+    const description =
+      failedCount > 0
+        ? `${merged} posts merged · ${syncedCount} ok, ${failedCount} skipped`
+        : `${merged} posts merged into feed`
+    toast.success(`Synced ${syncedCount}/${radars.length} radars`, { description })
   }
 
   const syncReal = async () => {

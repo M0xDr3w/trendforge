@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
 import { cn } from './cn'
 
 type NeoVariant = 'default' | 'active' | 'primary' | 'accent' | 'ghost'
@@ -9,6 +9,7 @@ interface NeoButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: NeoVariant
   size?: NeoSize
   fullWidth?: boolean
+  ref?: Ref<HTMLButtonElement>
 }
 
 const variantStyles: Record<NeoVariant, string> = {
@@ -32,10 +33,12 @@ export function NeoButton({
   fullWidth,
   className,
   type = 'button',
+  ref,
   ...props
 }: NeoButtonProps) {
   return (
     <button
+      ref={ref}
       type={type}
       className={cn(
         variantStyles[variant],
