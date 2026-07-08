@@ -1,6 +1,7 @@
-import { Target, Lightbulb, Sparkles } from 'lucide-react'
+import { Target, Lightbulb, Sparkles, Loader2 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import type { Cluster } from '../lib/types'
+import type { ForgeMode } from '../lib/forge'
 import { GlowDivider, HudLabel, NeoButton, Panel } from './ui'
 
 interface ForgePanelProps {
@@ -8,8 +9,14 @@ interface ForgePanelProps {
   customTopic: string
   sparks: string[]
   forgedFlash: boolean
+  forgeMode: ForgeMode
+  forgeUrl: string
+  llmLoading: boolean
   onCustomTopicChange: (value: string) => void
+  onForgeModeChange: (mode: ForgeMode) => void
+  onForgeUrlChange: (url: string) => void
   onForge: () => void
+  onCopyForgePrompt: () => void
   onAnalyzeWithGrok: () => void
   onCopySparks: () => void
 }
@@ -19,12 +26,19 @@ export function ForgePanel({
   customTopic,
   sparks,
   forgedFlash,
+  forgeMode,
+  forgeUrl,
+  llmLoading,
   onCustomTopicChange,
+  onForgeModeChange,
+  onForgeUrlChange,
   onForge,
+  onCopyForgePrompt,
   onAnalyzeWithGrok,
   onCopySparks,
 }: ForgePanelProps) {
   const reduceMotion = useReducedMotion()
+  const llmReady = forgeUrl.trim().length > 0
 
   return (
     <Panel glow padding="md" className="relative overflow-hidden">
@@ -43,6 +57,38 @@ export function ForgePanel({
       <div className="mb-2 text-sm">
         Selected: <span className="text-[var(--accent)]">{selectedCluster?.name || 'Global'}</span>
       </div>
+
+      <div className="mb-3 flex gap-1 rounded-[var(--radius-sm)] border border-[var(--border)] p-0.5">
+        <NeoButton
+          size="xs"
+          variant={forgeMode === 'templates' ? 'active' : 'ghost'}
+          className="flex-1"
+          onClick={() => onForgeModeChange('templates')}
+          aria-pressed={forgeMode === 'templates'}
+        >
+          Templates
+        </NeoButton>
+        <NeoButton
+          size="xs"
+          variant={forgeMode === 'llm' ? 'active' : 'ghost'}
+          className="flex-1"
+          onClick={() => onForgeModeChange('llm')}
+          disabled={!llmReady}
+          aria-pressed={forgeMode === 'llm'}
+          title={llmReady ? 'Use ForgeRouter LLM' : 'Set ForgeRouter URL below first'}
+        >
+          LLM
+        </NeoButton>
+      </div>
+
+      <input
+        value={forgeUrl}
+        onChange={e => onForgeUrlChange(e.target.value)}
+        placeholder="ForgeRouter URL (local only)..."
+        aria-label="ForgeRouter base URL"
+        className="mb-3 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+      />
+
       <input
         value={customTopic}
         onChange={e => onCustomTopicChange(e.target.value)}
@@ -50,14 +96,36 @@ export function ForgePanel({
         aria-label="Custom forge topic"
         className="mb-3 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
       />
+
+      {llmLoading ? (
+        <div className="mb-3 space-y-2" aria-busy="true" aria-label="Generating forge content">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-8 animate-pulse rounded-[var(--radius-sm)] bg-[var(--panel)]" />
+          ))}
+        </div>
+      ) : (
+        <NeoButton
+          onClick={onForge}
+          variant="primary"
+          fullWidth
+          className="relative hidden rounded-[var(--radius-md)] lg:flex"
+          disabled={llmLoading}
+          aria-label="Forge unique content angles and copy to clipboard"
+        >
+          {llmLoading ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Lightbulb size={16} aria-hidden />}
+          {forgeMode === 'llm' ? 'Forge with LLM' : 'Forge unique angles'}
+        </NeoButton>
+      )}
+
       <NeoButton
-        onClick={onForge}
-        variant="primary"
+        onClick={onCopyForgePrompt}
+        variant="ghost"
         fullWidth
-        className="relative hidden rounded-[var(--radius-md)] lg:flex"
-        aria-label="Forge unique content angles and copy to clipboard"
+        size="sm"
+        className="mt-2 hidden lg:flex"
+        aria-label="Copy LLM forge prompt to clipboard"
       >
-        <Lightbulb size={16} aria-hidden /> Forge unique angles
+        Copy forge prompt
       </NeoButton>
       <NeoButton
         onClick={onAnalyzeWithGrok}
@@ -71,7 +139,7 @@ export function ForgePanel({
         Ask Grok + X MCP
       </NeoButton>
       <div className="mt-2 text-center text-[10px] text-[var(--muted)]" aria-live="polite">
-        {forgedFlash ? 'Copied to clipboard' : 'First idea copied to clipboard'}
+        {forgedFlash ? 'Copied to clipboard' : forgeMode === 'llm' && llmReady ? 'LLM mode — first idea copied' : 'First idea copied to clipboard'}
       </div>
 
       {sparks.length > 0 && (

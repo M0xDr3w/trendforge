@@ -3,10 +3,20 @@ import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { config } from './lib/config'
 import { computeClusters, buildVolumeSnapshot } from './lib/clusters'
-import { detectInsights, forgeContent } from './lib/narrative'
+import { detectInsights } from './lib/narrative'
 import { generateSparks } from './lib/insights'
 import { seedPosts, generateMockPost, fetchRealPosts, mergePosts } from './lib/feed'
 import { loadRadars, saveRadars, addRadar, deleteRadar, updateRadarLastSynced } from './lib/radars'
+import { downloadExportBundle, downloadMarkdownThread, type ExportContext } from './lib/export'
+import {
+  buildForgePrompt,
+  callForgeLlm,
+  forgeContent,
+  loadForgeUrl,
+  parseForgeResponse,
+  saveForgeUrl,
+  type ForgeMode,
+} from './lib/forge'
 import { AnalyticsSidebar } from './components/AnalyticsSidebar'
 import { Header } from './components/Header'
 import { FeedPanel } from './components/FeedPanel'
@@ -39,6 +49,9 @@ function App() {
     loadRadars(config.defaultQueries, config.maxRadars),
   )
   const [syncingRadarId, setSyncingRadarId] = useState<string | null>(null)
+  const [forgeMode, setForgeMode] = useState<ForgeMode>('templates')
+  const [forgeUrl, setForgeUrl] = useState(() => loadForgeUrl())
+  const [llmLoading, setLlmLoading] = useState(false)
 
   const clusters = computeClusters(posts, history)
   const previousVolumes = history.length > 0 ? history[history.length - 1] : {}
@@ -46,6 +59,15 @@ function App() {
   const sparks = selectedCluster
     ? generateSparks({ name: selectedCluster.name, category: selectedCluster.name })
     : []
+
+  const exportContext: ExportContext = {
+    selectedCluster,
+    customTopic,
+    posts,
+    clusters,
+    insights,
+    radars,
+  }
 
   useEffect(() => {
     setHistory(h => [...h.slice(-8), buildVolumeSnapshot(posts)])
@@ -61,6 +83,10 @@ function App() {
   useEffect(() => {
     saveRadars(radars)
   }, [radars])
+
+  useEffect(() => {
+    saveForgeUrl(forgeUrl)
+  }, [forgeUrl])
 
   useEffect(() => {
     if (!liveReal) return
@@ -115,17 +141,47 @@ function App() {
     toast.info('Post injected')
   }
 
-  const forge = useCallback(() => {
-    const ideas = forgeContent(selectedCluster, customTopic || undefined)
+  const forge = useCallback(async () => {
     const currentSparks = selectedCluster
       ? generateSparks({ name: selectedCluster.name, category: selectedCluster.name })
       : []
     const sparkNote = currentSparks.length > 0 ? `\n\nSpark: ${currentSparks[0]}` : ''
+
+    let ideas: string[]
+
+    if (forgeMode === 'llm' && forgeUrl.trim()) {
+      setLlmLoading(true)
+      try {
+        const prompt = buildForgePrompt(selectedCluster, currentSparks, insights, customTopic || undefined)
+        const response = await callForgeLlm(forgeUrl.trim(), prompt)
+        ideas = parseForgeResponse(response)
+        toast.success('LLM forged content', { description: ideas[0]?.slice(0, 75) + '...' })
+      } catch (err) {
+        ideas = forgeContent(selectedCluster, customTopic || undefined)
+        toast.error('LLM forge failed — using templates', {
+          description: err instanceof Error ? err.message : 'Unknown error',
+        })
+      } finally {
+        setLlmLoading(false)
+      }
+    } else {
+      ideas = forgeContent(selectedCluster, customTopic || undefined)
+      toast.success('Content forged', { description: ideas[0].slice(0, 75) + '...' })
+    }
+
     navigator.clipboard?.writeText(ideas.join('\n\n') + sparkNote).catch(() => {})
-    toast.success('Content forged', { description: ideas[0].slice(0, 75) + '...' })
     setForgedFlash(true)
     window.setTimeout(() => setForgedFlash(false), 900)
-  }, [selectedCluster, customTopic])
+  }, [selectedCluster, customTopic, forgeMode, forgeUrl, insights])
+
+  const copyForgePrompt = useCallback(() => {
+    const currentSparks = selectedCluster
+      ? generateSparks({ name: selectedCluster.name, category: selectedCluster.name })
+      : []
+    const prompt = buildForgePrompt(selectedCluster, currentSparks, insights, customTopic || undefined)
+    navigator.clipboard?.writeText(prompt).catch(() => {})
+    toast.success('Forge prompt copied')
+  }, [selectedCluster, customTopic, insights])
 
   const analyzeWithGrok = () => {
     if (!selectedCluster) {
@@ -176,63 +232,15 @@ ${summary}`
   }
 
   const exportMarkdownThread = () => {
-    const topic = selectedCluster?.name || customTopic || 'emerging signal'
-    const vol = selectedCluster?.volume || posts.length
-    const sent = selectedCluster ? selectedCluster.avgSentiment.toFixed(2) : '0.00'
-    const shift = selectedCluster ? selectedCluster.shift.toFixed(2) : '0.00'
-    const ideas = forgeContent(selectedCluster, customTopic || undefined)
-    const currentSparks = selectedCluster
-      ? generateSparks({ name: selectedCluster.name, category: selectedCluster.name })
-      : []
-
-    const md = `# ${topic} — TrendForge Thread
-
-**Generated:** ${new Date().toISOString()}
-**Cluster volume:** ${vol} | **Avg sentiment:** ${sent} | **Shift:** ${shift}
-**Source:** TrendForge real-time X radar
-
-## Key Signals
-${selectedCluster?.posts.slice(0, 3).map(p => `- ${p.text} (@${p.username})`).join('\n') || '- Live feed analysis'}
-
-## Forged Angles
-${ideas.map((i, idx) => `${idx + 1}. ${i}`).join('\n\n')}
-
-## Sparks / Next Experiments
-${currentSparks.map(s => `- ${s}`).join('\n') || '- Run a 48h micro-experiment'}
-
-## Action
-${insights[0]?.action || 'Ship the contrarian or gap angle now.'}
-
----
-Exported from TrendForge. Pair with ForgeRouter for private LLM refinement.
-`
-
-    const blob = new Blob([md], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `trendforge-thread-${topic.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.md`
-    a.click()
-    URL.revokeObjectURL(url)
-
-    const sidecar = {
-      topic,
-      volume: vol,
-      sentiment: sent,
-      shift,
-      forged: ideas,
-      sparks: currentSparks,
-      timestamp: new Date().toISOString(),
-    }
-    const sblob = new Blob([JSON.stringify(sidecar, null, 2)], { type: 'application/json' })
-    const su = URL.createObjectURL(sblob)
-    const sa = document.createElement('a')
-    sa.href = su
-    sa.download = `trendforge-meta-${Date.now()}.json`
-    sa.click()
-    URL.revokeObjectURL(su)
-
+    downloadMarkdownThread(exportContext)
     toast.success('Markdown thread + JSON sidecar downloaded', { description: 'Ready to post or pipe to other Forges' })
+  }
+
+  const exportBundle = async () => {
+    await downloadExportBundle(exportContext)
+    toast.success('Export bundle downloaded', {
+      description: 'thread.md, meta.json, and signals.json with shared prefix',
+    })
   }
 
   const logToMakerlog = () => {
@@ -353,6 +361,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
             onToggleLiveReal={() => setLiveReal(!liveReal)}
             onExportState={exportState}
             onExportMarkdown={exportMarkdownThread}
+            onExportBundle={exportBundle}
             onLogToMakerlog={logToMakerlog}
           />
         </motion.div>
@@ -402,8 +411,14 @@ Tags: trendforge,signals,forge`).catch(() => {})
               customTopic={customTopic}
               sparks={sparks}
               forgedFlash={forgedFlash}
+              forgeMode={forgeMode}
+              forgeUrl={forgeUrl}
+              llmLoading={llmLoading}
               onCustomTopicChange={setCustomTopic}
+              onForgeModeChange={setForgeMode}
+              onForgeUrlChange={setForgeUrl}
               onForge={forge}
+              onCopyForgePrompt={copyForgePrompt}
               onAnalyzeWithGrok={analyzeWithGrok}
               onCopySparks={copySparks}
             />

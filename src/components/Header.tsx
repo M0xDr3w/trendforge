@@ -17,6 +17,7 @@ interface HeaderProps {
   onToggleLiveReal: () => void
   onExportState: () => void
   onExportMarkdown: () => void
+  onExportBundle: () => void
   onLogToMakerlog: () => void
 }
 
@@ -33,6 +34,7 @@ export function Header({
   onToggleLiveReal,
   onExportState,
   onExportMarkdown,
+  onExportBundle,
   onLogToMakerlog,
 }: HeaderProps) {
   const reduceMotion = useReducedMotion()
@@ -101,6 +103,9 @@ export function Header({
         <NeoButton onClick={onExportState} size="xs">Export JSON</NeoButton>
         <NeoButton onClick={onExportMarkdown} size="xs" className="border-[var(--accent)]/30 bg-[var(--accent)]/10">
           Download thread
+        </NeoButton>
+        <NeoButton onClick={onExportBundle} size="xs" variant="accent">
+          Download bundle
         </NeoButton>
         <NeoButton onClick={onLogToMakerlog} size="xs">MakerLog</NeoButton>
       </div>
