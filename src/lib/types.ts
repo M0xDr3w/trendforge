@@ -44,4 +44,5 @@ export interface TrendForgeConfig {
   defaultSyncQuery: string
   maxRadars: number
   defaultQueries: string[]
+  alertShiftThreshold: number
 }

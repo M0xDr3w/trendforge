@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { config } from './lib/config'
@@ -8,6 +8,16 @@ import { generateSparks } from './lib/insights'
 import { seedPosts, generateMockPost, fetchRealPosts, mergePosts } from './lib/feed'
 import { loadRadars, saveRadars, addRadar, deleteRadar, updateRadarLastSynced } from './lib/radars'
 import { downloadExportBundle, downloadMarkdownThread, type ExportContext } from './lib/export'
+import {
+  findNewShiftAlerts,
+  formatShiftAlertMessage,
+  loadAlertsEnabled,
+  loadBrowserNotify,
+  requestBrowserNotificationPermission,
+  saveAlertsEnabled,
+  saveBrowserNotify,
+  showBrowserNotification,
+} from './lib/alerts'
 import {
   buildForgePrompt,
   callForgeLlm,
@@ -23,14 +33,12 @@ import { ClusterPanel } from './components/ClusterPanel'
 import { InsightsPanel } from './components/InsightsPanel'
 import { ForgePanel } from './components/ForgePanel'
 import { Panel } from './components/ui'
+import { MobileAnalyticsDrawer } from './components/MobileAnalyticsDrawer'
 import { MobileActionBar } from './components/MobileActionBar'
 import { pageVariants, sectionVariants, type ConnectionStatus } from './components/motion'
 import type { XApiConnectionStatus } from './lib/xApiErrors'
 import type { XPost, Cluster, SavedRadar } from './lib/types'
 
-const AnalyticsSidebar = lazy(() =>
-  import('./components/AnalyticsSidebar').then(m => ({ default: m.AnalyticsSidebar })),
-)
 const VolumeChart = lazy(() =>
   import('./components/VolumeChart').then(m => ({ default: m.VolumeChart })),
 )
@@ -66,6 +74,10 @@ function App() {
   const [forgeMode, setForgeMode] = useState<ForgeMode>('templates')
   const [forgeUrl, setForgeUrl] = useState(() => loadForgeUrl())
   const [llmLoading, setLlmLoading] = useState(false)
+  const [alertsEnabled, setAlertsEnabled] = useState(() => loadAlertsEnabled())
+  const [browserNotify, setBrowserNotify] = useState(() => loadBrowserNotify())
+  const liveRealToastShownRef = useRef(false)
+  const shiftNotifiedRef = useRef<Record<string, number>>({})
 
   const clusters = computeClusters(posts, history)
   const previousVolumes = history.length > 0 ? history[history.length - 1] : {}
@@ -103,7 +115,38 @@ function App() {
   }, [forgeUrl])
 
   useEffect(() => {
-    if (!liveReal) return
+    if (!alertsEnabled) return
+    const { alerts, nextNotified } = findNewShiftAlerts(
+      clusters,
+      config.alertShiftThreshold,
+      shiftNotifiedRef.current,
+    )
+    shiftNotifiedRef.current = nextNotified
+    for (const c of clusters) {
+      if (c.shift < config.alertShiftThreshold) {
+        delete shiftNotifiedRef.current[c.name]
+      }
+    }
+    for (const alert of alerts) {
+      const message = formatShiftAlertMessage(alert)
+      toast.success('Shift alert', {
+        description: `${message} · ${alert.volume} posts — tap cluster to forge`,
+      })
+      if (browserNotify) {
+        showBrowserNotification('TrendForge shift', message)
+      }
+    }
+  }, [clusters, alertsEnabled, browserNotify])
+
+  useEffect(() => {
+    if (!liveReal) {
+      liveRealToastShownRef.current = false
+      return
+    }
+    if (!liveRealToastShownRef.current) {
+      toast.info(`Live Real X polling enabled (every ~${config.liveRealPollMs / 1000}s)`)
+      liveRealToastShownRef.current = true
+    }
     const id = setInterval(async () => {
       const { posts: fresh, error } = await fetchRealPosts(config.liveRealQuery, { silent: true })
       if (error) {
@@ -115,7 +158,6 @@ function App() {
         setPosts(prev => mergePosts(prev, fresh))
       }
     }, config.liveRealPollMs)
-    toast.info(`Live Real X polling enabled (every ~${config.liveRealPollMs / 1000}s)`)
     return () => clearInterval(id)
   }, [liveReal])
 
@@ -136,6 +178,7 @@ function App() {
     setSelectedCluster(null)
     setCustomTopic('')
     setXApiStatus('mock')
+    shiftNotifiedRef.current = {}
     toast.success('Feed reset')
   }
 
@@ -268,6 +311,19 @@ Tags: trendforge,signals,forge`).catch(() => {})
     toast.info('MakerLog entry copied', { description: 'Paste into makerlog or run insert' })
   }
 
+  const toggleAlerts = async () => {
+    const next = !alertsEnabled
+    setAlertsEnabled(next)
+    saveAlertsEnabled(next)
+    if (next && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      const perm = await requestBrowserNotificationPermission()
+      const granted = perm === 'granted'
+      setBrowserNotify(granted)
+      saveBrowserNotify(granted)
+    }
+    toast.info(next ? 'Shift alerts enabled' : 'Shift alerts muted')
+  }
+
   const syncRadar = async (radar: SavedRadar) => {
     setSyncingRadarId(radar.id)
     const { posts: realPosts, error } = await fetchRealPosts(radar.query)
@@ -299,6 +355,33 @@ Tags: trendforge,signals,forge`).catch(() => {})
     const radar = radars.find(r => r.id === id)
     setRadars(deleteRadar(radars, id))
     toast.info(radar ? `Removed "${radar.name}"` : 'Radar removed')
+  }
+
+  const syncAllRadars = async () => {
+    if (radars.length === 0) {
+      toast.info('No saved radars to sync')
+      return
+    }
+    let merged = 0
+    for (const radar of radars) {
+      setSyncingRadarId(radar.id)
+      const { posts: realPosts, error } = await fetchRealPosts(radar.query)
+      if (error) {
+        setSyncingRadarId(null)
+        setXApiStatus('error')
+        return
+      }
+      if (realPosts.length > 0) {
+        setXApiStatus('connected')
+        setPosts(prev => mergePosts(prev, realPosts))
+        setRadars(prev => updateRadarLastSynced(prev, radar.id))
+        merged += realPosts.length
+      }
+      await new Promise(resolve => setTimeout(resolve, 400))
+    }
+    setSyncingRadarId(null)
+    setFeedSearch('')
+    toast.success(`Synced ${radars.length} radars`, { description: `${merged} posts merged into feed` })
   }
 
   const syncReal = async () => {
@@ -373,6 +456,8 @@ Tags: trendforge,signals,forge`).catch(() => {})
             onReset={reset}
             onAddCustomPost={addCustomPost}
             onToggleLiveReal={() => setLiveReal(!liveReal)}
+            alertsEnabled={alertsEnabled}
+            onToggleAlerts={toggleAlerts}
             onExportState={exportState}
             onExportMarkdown={exportMarkdownThread}
             onExportBundle={exportBundle}
@@ -398,6 +483,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
               onAddRadar={handleAddRadar}
               onDeleteRadar={handleDeleteRadar}
               onSyncRadar={syncRadar}
+              onSyncAllRadars={syncAllRadars}
             />
           </motion.div>
 
@@ -410,18 +496,16 @@ Tags: trendforge,signals,forge`).catch(() => {})
           </motion.div>
 
           <motion.div className="space-y-4 lg:col-span-3" variants={sectionVariants}>
-            <Suspense fallback={<ChartSectionFallback label="analytics" />}>
-              <AnalyticsSidebar
-                posts={posts}
-                clusters={clusters}
-                onSyncReal={syncReal}
-                onSelectCluster={(name) => {
-                  const match = clusters.find(c => c.name === name)
-                  if (match) setSelectedCluster(match)
-                }}
-              />
-            </Suspense>
-            <InsightsPanel insights={insights} />
+            <MobileAnalyticsDrawer
+              posts={posts}
+              clusters={clusters}
+              onSyncReal={syncReal}
+              onSelectCluster={(name) => {
+                const match = clusters.find(c => c.name === name)
+                if (match) setSelectedCluster(match)
+              }}
+            />
+            <InsightsPanel insights={insights} postCount={posts.length} />
             <ForgePanel
               selectedCluster={selectedCluster}
               customTopic={customTopic}

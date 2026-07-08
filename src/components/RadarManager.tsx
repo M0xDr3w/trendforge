@@ -12,6 +12,7 @@ interface RadarManagerProps {
   onAdd: (name: string, query: string) => void
   onDelete: (id: string) => void
   onSync: (radar: SavedRadar) => void
+  onSyncAll: () => void
 }
 
 export function RadarManager({
@@ -22,6 +23,7 @@ export function RadarManager({
   onAdd,
   onDelete,
   onSync,
+  onSyncAll,
 }: RadarManagerProps) {
   const [expanded, setExpanded] = useState(false)
   const [name, setName] = useState('')
@@ -51,9 +53,20 @@ export function RadarManager({
           <Radio size={14} className="text-[var(--cyan)]" aria-hidden />
           <HudLabel className="text-xs tracking-[0.15em]">Saved radars</HudLabel>
         </div>
-        <span className="text-xs text-[var(--muted)]">
-          {radars.length}/{maxRadars}
-        </span>
+        <div className="flex items-center gap-2">
+          <NeoButton
+            size="xs"
+            variant="ghost"
+            onClick={onSyncAll}
+            disabled={syncingId !== null || radars.length === 0}
+            aria-label="Sync all saved radars"
+          >
+            Sync all
+          </NeoButton>
+          <span className="text-xs text-[var(--muted)]">
+            {radars.length}/{maxRadars}
+          </span>
+        </div>
       </div>
 
       <div className="space-y-2">

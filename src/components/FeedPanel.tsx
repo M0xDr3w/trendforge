@@ -22,6 +22,7 @@ interface FeedPanelProps {
   onAddRadar: (name: string, query: string) => void
   onDeleteRadar: (id: string) => void
   onSyncRadar: (radar: SavedRadar) => void
+  onSyncAllRadars: () => void
 }
 
 function avatarInitial(username: string): string {
@@ -44,6 +45,7 @@ export function FeedPanel({
   onAddRadar,
   onDeleteRadar,
   onSyncRadar,
+  onSyncAllRadars,
 }: FeedPanelProps) {
   const reduceMotion = useReducedMotion()
   const visiblePosts = filteredPosts.slice(0, 12)
@@ -153,6 +155,7 @@ export function FeedPanel({
         onAdd={onAddRadar}
         onDelete={onDeleteRadar}
         onSync={onSyncRadar}
+        onSyncAll={onSyncAllRadars}
       />
     </div>
   )

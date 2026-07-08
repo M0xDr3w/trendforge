@@ -59,6 +59,22 @@ interface RisingClustersEmptyProps {
   onSyncReal?: () => void
 }
 
+export function InsightsEmptyState({ postCount }: { postCount: number }) {
+  return (
+    <div
+      className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--panel)]/40 px-4 py-8 text-center"
+      role="status"
+    >
+      <p className="font-display text-sm font-medium text-[var(--text)]">No cluster signals yet</p>
+      <p className="mx-auto mt-2 max-w-[240px] text-xs leading-relaxed text-[var(--muted)]">
+        {postCount < 4
+          ? 'Insights appear once enough posts cluster and velocity shifts emerge. Keep ingesting or sync real X.'
+          : 'Themes are forming but nothing is spiking yet. Wait for volume shifts or select a cluster to forge.'}
+      </p>
+    </div>
+  )
+}
+
 export function RisingClustersEmpty({ onSyncReal }: RisingClustersEmptyProps) {
   return (
     <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--border)] bg-[var(--panel)]/40 px-3 py-4 text-center">
