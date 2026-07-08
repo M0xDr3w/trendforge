@@ -23,7 +23,7 @@ export function InsightsPanel({ insights, postCount }: InsightsPanelProps) {
             <motion.div key={`${ins.type}-${ins.title}-${idx}`} variants={cardVariants}>
               <Panel padding="sm" className="alert text-sm">
                 <HudLabel className="mb-0.5 block text-[10px] text-[var(--accent)]">{ins.type}</HudLabel>
-                <div className="mb-1 font-semibold">{ins.title}</div>
+                <div className="mb-1 font-semibold text-[var(--text)]">{ins.title}</div>
                 <div className="mb-1.5 text-xs text-[var(--muted)]">{ins.detail}</div>
                 <div className="text-xs text-[var(--green)]">→ {ins.action}</div>
               </Panel>

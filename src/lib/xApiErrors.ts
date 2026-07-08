@@ -114,7 +114,39 @@ export function normalizeProxyError(payload: ProxyPayload | Record<string, unkno
 }
 
 export function showXApiErrorToast(error: XApiError): void {
-  toast.error(error.message, { description: error.hint, duration: 6000 })
+  toast.error(error.message, { description: error.hint, duration: 8000 })
+}
+
+export function isFatalXApiError(code: XApiErrorCode): boolean {
+  return code === 'token_missing' || code === 'unauthorized' || code === 'forbidden' || code === 'credits_depleted'
+}
+
+export function getXApiRemediation(error: XApiError): { steps: string[]; link?: { label: string; href: string } } {
+  if (error.code === 'unauthorized' || error.code === 'token_missing') {
+    return {
+      steps: [
+        'In developer.x.com → your app → Keys and tokens, copy the App-only Bearer Token (not an OAuth user token from xurl — those expire in ~2 hours).',
+        'Vercel → trendforge-opal → Settings → Environment Variables → update X_BEARER_TOKEN for Production.',
+        'Redeploy (or push a commit). Then click Test in the feed panel.',
+      ],
+      link: { label: 'X Developer Portal', href: 'https://developer.x.com/en/portal/dashboard' },
+    }
+  }
+  if (error.code === 'rate_limit') {
+    return {
+      steps: [
+        'Sync all fires one search per saved radar — wait 60 seconds and retry.',
+        'Use fewer radars or sync them one at a time to stay under X API limits.',
+      ],
+    }
+  }
+  if (error.code === 'credits_depleted') {
+    return {
+      steps: ['Restore credits or upgrade your X Developer plan at developer.x.com → Billing.'],
+      link: { label: 'X Billing', href: 'https://developer.x.com/en/portal/products' },
+    }
+  }
+  return { steps: [error.hint] }
 }
 
 export type XApiConnectionStatus = 'connected' | 'mock' | 'error'

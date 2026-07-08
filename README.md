@@ -3,6 +3,8 @@
 **Real-Time X Trend Radar + Content Forge**  
 Escape the "Sea of Sameness". Detect emerging narratives, gaps, and shifts on X in real time. Forge unique, timely angles, threads, and sparks you can ship immediately.
 
+**Production:** https://trendforge-opal.vercel.app
+
 **Target users:** Indie creators, researchers, builders who want signal over noise and original content fast. Local-first friendly (pair with ForgeRouter for private generation).
 
 ## Value Proposition (30 seconds)

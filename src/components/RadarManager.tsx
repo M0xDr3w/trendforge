@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Loader2, Plus, Radio, Trash2 } from 'lucide-react'
 import type { SavedRadar } from '../lib/types'
 import { formatLastSynced } from '../lib/radars'
-import { GlowDivider, HudLabel, NeoButton, Panel } from './ui'
+import { GlowDivider, HudLabel, NeoButton, Panel, FieldInput } from './ui'
 
 interface RadarManagerProps {
   radars: SavedRadar[]
@@ -130,19 +130,17 @@ export function RadarManager({
 
       {expanded ? (
         <Panel padding="sm" className="mt-2 space-y-2">
-          <input
+          <FieldInput
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Radar name"
             aria-label="Radar name"
-            className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm placeholder:text-[var(--muted)] focus:border-[var(--cyan)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)]"
           />
-          <input
+          <FieldInput
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="X search query"
+            placeholder="X search query (e.g. AI agents OR grok)"
             aria-label="X search query"
-            className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-sm placeholder:text-[var(--muted)] focus:border-[var(--cyan)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)]"
           />
           <div className="flex gap-2">
             <NeoButton size="xs" variant="accent" onClick={handleAdd} disabled={!name.trim() || !query.trim()}>

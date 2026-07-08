@@ -2,7 +2,7 @@ import { Target, Lightbulb, Sparkles, Loader2 } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import type { Cluster } from '../lib/types'
 import type { ForgeMode } from '../lib/forge'
-import { GlowDivider, HudLabel, NeoButton, Panel } from './ui'
+import { GlowDivider, HudLabel, NeoButton, Panel, FieldInput } from './ui'
 
 interface ForgePanelProps {
   selectedCluster: Cluster | null
@@ -81,20 +81,20 @@ export function ForgePanel({
         </NeoButton>
       </div>
 
-      <input
+      <FieldInput
         value={forgeUrl}
         onChange={e => onForgeUrlChange(e.target.value)}
         placeholder="ForgeRouter URL (local only)..."
         aria-label="ForgeRouter base URL"
-        className="mb-3 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+        className="mb-3 text-xs"
       />
 
-      <input
+      <FieldInput
         value={customTopic}
         onChange={e => onCustomTopicChange(e.target.value)}
-        placeholder="Custom topic..."
+        placeholder="Custom topic override..."
         aria-label="Custom forge topic"
-        className="mb-3 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm focus:border-[var(--accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+        className="mb-3"
       />
 
       {llmLoading ? (
@@ -152,7 +152,7 @@ export function ForgePanel({
             {sparks.map((s, i) => (
               <div
                 key={i}
-                className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--panel)] p-2 text-xs leading-snug"
+                className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--input-bg)] p-2.5 text-[13px] leading-relaxed text-[var(--text)]"
               >
                 {s}
               </div>

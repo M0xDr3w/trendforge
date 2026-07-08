@@ -1,6 +1,7 @@
 # TrendForge — Master Roadmap
 
-**Last updated:** 2026-07-07  
+**Last updated:** 2026-07-08  
+**Production:** https://trendforge-opal.vercel.app  
 **Status:** Functional prototype → intelligence upgrade
 
 ## Vision

@@ -20,5 +20,6 @@
     "embeddings OR vector OR RAG",
     "AI OR agents OR grok OR embeddings"
   ],
-  "alertShiftThreshold": 0.4
+  "alertShiftThreshold": 0.4,
+  "syncRadarDelayMs": 2000
 }

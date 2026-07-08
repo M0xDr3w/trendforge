@@ -35,8 +35,10 @@ import { ForgePanel } from './components/ForgePanel'
 import { Panel } from './components/ui'
 import { MobileAnalyticsDrawer } from './components/MobileAnalyticsDrawer'
 import { MobileActionBar } from './components/MobileActionBar'
+import { XApiStatusBanner } from './components/XApiStatusBanner'
 import { pageVariants, sectionVariants, type ConnectionStatus } from './components/motion'
-import type { XApiConnectionStatus } from './lib/xApiErrors'
+import type { XApiConnectionStatus, XApiError } from './lib/xApiErrors'
+import { isFatalXApiError, showXApiErrorToast } from './lib/xApiErrors'
 import type { XPost, Cluster, SavedRadar } from './lib/types'
 
 const VolumeChart = lazy(() =>
@@ -67,6 +69,8 @@ function App() {
   const [liveReal, setLiveReal] = useState(false)
   const [forgedFlash, setForgedFlash] = useState(false)
   const [xApiStatus, setXApiStatus] = useState<XApiConnectionStatus>('mock')
+  const [lastXApiError, setLastXApiError] = useState<XApiError | null>(null)
+  const [xApiBannerDismissed, setXApiBannerDismissed] = useState(false)
   const [radars, setRadars] = useState<SavedRadar[]>(() =>
     loadRadars(config.defaultQueries, config.maxRadars),
   )
@@ -114,6 +118,31 @@ function App() {
     saveForgeUrl(forgeUrl)
   }, [forgeUrl])
 
+  const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+  const reportXApiFailure = useCallback((error: XApiError, context?: string) => {
+    setXApiStatus('error')
+    setLastXApiError(error)
+    setXApiBannerDismissed(false)
+    showXApiErrorToast(error)
+    if (context) {
+      toast.error(context, { description: error.message, duration: 8000 })
+    }
+  }, [])
+
+  const fetchRadarPosts = useCallback(
+    async (query: string, radarName: string) => {
+      let result = await fetchRealPosts(query, { silent: true })
+      if (result.error?.code === 'rate_limit') {
+        toast.info(`Rate limited on "${radarName}"`, { description: 'Waiting 8s, then retrying once…' })
+        await sleep(8000)
+        result = await fetchRealPosts(query, { silent: true })
+      }
+      return result
+    },
+    [],
+  )
+
   useEffect(() => {
     if (!alertsEnabled) return
     const { alerts, nextNotified } = findNewShiftAlerts(
@@ -151,10 +180,13 @@ function App() {
       const { posts: fresh, error } = await fetchRealPosts(config.liveRealQuery, { silent: true })
       if (error) {
         setXApiStatus('error')
+        setLastXApiError(error)
+        setXApiBannerDismissed(false)
         return
       }
       if (fresh.length > 0) {
         setXApiStatus('connected')
+        setLastXApiError(null)
         setPosts(prev => mergePosts(prev, fresh))
       }
     }, config.liveRealPollMs)
@@ -326,18 +358,21 @@ Tags: trendforge,signals,forge`).catch(() => {})
 
   const syncRadar = async (radar: SavedRadar) => {
     setSyncingRadarId(radar.id)
-    const { posts: realPosts, error } = await fetchRealPosts(radar.query)
+    const { posts: realPosts, error } = await fetchRadarPosts(radar.query, radar.name)
     setSyncingRadarId(null)
     if (error) {
-      setXApiStatus('error')
+      reportXApiFailure(error, `Sync failed for "${radar.name}"`)
       return
     }
     if (realPosts.length > 0) {
       setXApiStatus('connected')
+      setLastXApiError(null)
       setPosts(prev => mergePosts(prev, realPosts))
       setRadars(prev => updateRadarLastSynced(prev, radar.id))
       setFeedSearch('')
       toast.success(`Synced ${realPosts.length} posts for "${radar.name}"`)
+    } else {
+      toast.info(`No new posts for "${radar.name}"`)
     }
   }
 
@@ -363,21 +398,33 @@ Tags: trendforge,signals,forge`).catch(() => {})
       return
     }
     let merged = 0
-    for (const radar of radars) {
+    let syncedCount = 0
+    for (let i = 0; i < radars.length; i++) {
+      const radar = radars[i]
       setSyncingRadarId(radar.id)
-      const { posts: realPosts, error } = await fetchRealPosts(radar.query)
+      const { posts: realPosts, error } = await fetchRadarPosts(radar.query, radar.name)
       if (error) {
         setSyncingRadarId(null)
-        setXApiStatus('error')
+        const progress = syncedCount > 0 ? ` (${syncedCount}/${radars.length} radars synced before failure)` : ''
+        reportXApiFailure(
+          error,
+          isFatalXApiError(error.code)
+            ? `Sync all stopped at "${radar.name}"${progress}`
+            : `Sync all failed on "${radar.name}"${progress}`,
+        )
         return
       }
       if (realPosts.length > 0) {
         setXApiStatus('connected')
+        setLastXApiError(null)
         setPosts(prev => mergePosts(prev, realPosts))
         setRadars(prev => updateRadarLastSynced(prev, radar.id))
         merged += realPosts.length
       }
-      await new Promise(resolve => setTimeout(resolve, 400))
+      syncedCount += 1
+      if (i < radars.length - 1) {
+        await sleep(config.syncRadarDelayMs)
+      }
     }
     setSyncingRadarId(null)
     setFeedSearch('')
@@ -387,13 +434,14 @@ Tags: trendforge,signals,forge`).catch(() => {})
   const syncReal = async () => {
     const q = prompt('X search query:', config.defaultSyncQuery)
     if (!q) return
-    const { posts: realPosts, error } = await fetchRealPosts(q)
+    const { posts: realPosts, error } = await fetchRadarPosts(q, 'manual sync')
     if (error) {
-      setXApiStatus('error')
+      reportXApiFailure(error)
       return
     }
     if (realPosts.length > 0) {
       setXApiStatus('connected')
+      setLastXApiError(null)
       setPosts(prev => mergePosts(prev, realPosts))
       setFeedSearch('')
       toast.success(`Synced ${realPosts.length} real posts from X (merged)`)
@@ -404,11 +452,13 @@ Tags: trendforge,signals,forge`).catch(() => {})
     toast.info('Testing /api/x-search proxy...')
     const { posts: testPosts, error } = await fetchRealPosts('AI')
     if (error) {
-      setXApiStatus('error')
+      reportXApiFailure(error)
       return
     }
     if (testPosts.length > 0) {
       setXApiStatus('connected')
+      setLastXApiError(null)
+      setXApiBannerDismissed(true)
       toast.success(`Proxy OK — got ${testPosts.length} real posts. First: ${testPosts[0].text.slice(0, 60)}...`)
     } else {
       setXApiStatus('error')
@@ -464,6 +514,16 @@ Tags: trendforge,signals,forge`).catch(() => {})
             onLogToMakerlog={logToMakerlog}
           />
         </motion.div>
+
+        {lastXApiError && !xApiBannerDismissed && (
+          <motion.div variants={sectionVariants}>
+            <XApiStatusBanner
+              error={lastXApiError}
+              onDismiss={() => setXApiBannerDismissed(true)}
+              onRetryTest={testRealConnection}
+            />
+          </motion.div>
+        )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <motion.div className="lg:col-span-5" variants={sectionVariants}>

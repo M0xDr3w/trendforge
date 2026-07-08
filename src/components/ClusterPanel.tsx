@@ -57,7 +57,7 @@ export function ClusterPanel({ clusters, selectedClusterId, onSelectCluster }: C
                         transition={reduceMotion ? undefined : { duration: 1.2, repeat: Infinity }}
                       />
                       <div className="min-w-0">
-                        <div className="truncate font-semibold">{cluster.name}</div>
+                        <div className="truncate font-semibold text-[var(--text)]">{cluster.name}</div>
                         <div className="text-xs text-[var(--muted)]">
                           {cluster.posts.length} posts · vol {cluster.volume}
                         </div>
