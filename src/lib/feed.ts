@@ -1,6 +1,12 @@
-import { toast } from 'sonner'
 import type { XPost } from './types'
 import { config } from './config'
+import {
+  normalizeProxyError,
+  showXApiErrorToast,
+  type FetchRealPostsResult,
+} from './xApiErrors'
+
+export type { FetchRealPostsResult } from './xApiErrors'
 
 export const SEED_POSTS: Omit<XPost, 'id' | 'timestamp'>[] = [
   { text: 'AI agents are finally shipping real products this week. The loop is closing fast.', username: 'a16z', likes: 12400, retweets: 2100, sentiment: 0.8 },
@@ -41,27 +47,35 @@ export function seedPosts(): XPost[] {
   }))
 }
 
-export async function fetchRealPosts(query: string): Promise<XPost[]> {
+export async function fetchRealPosts(
+  query: string,
+  options?: { silent?: boolean },
+): Promise<FetchRealPostsResult> {
+  let proxyResult: FetchRealPostsResult | null = null
+
   try {
     const res = await fetch(`/api/x-search?query=${encodeURIComponent(query)}&max_results=20`)
-    if (res.ok) {
-      const data = await res.json()
-      if (data.error) {
-        toast.error(`Proxy error: ${data.error}. Set X_BEARER_TOKEN (Vercel env + redeploy, or X_BEARER_TOKEN=... npx vercel dev). See .env.example`)
-        return []
-      }
-      return data
+    const data: unknown = await res.json().catch(() => ({}))
+
+    if (res.ok && Array.isArray(data)) {
+      return { posts: data as XPost[] }
     }
-    await res.text().catch(() => '')
-    toast.error(`Proxy failed (${res.status}). Check X_BEARER_TOKEN + see README "Real X Token Setup"`)
+
+    proxyResult = { posts: [], error: normalizeProxyError(data as Record<string, unknown>, res.status) }
   } catch (e) {
     console.warn('Proxy fetch error', e)
+    proxyResult = { posts: [], error: normalizeProxyError({ code: 'network_error' }) }
+  }
+
+  if (proxyResult?.error && proxyResult.error.code !== 'network_error') {
+    if (!options?.silent) showXApiErrorToast(proxyResult.error)
+    return proxyResult
   }
 
   const allowClientBearer = config.allowClientBearer && import.meta.env.DEV
   if (!allowClientBearer) {
-    toast.error('Real X unavailable. Use `X_BEARER_TOKEN=... npx vercel dev` for the secure proxy.')
-    return []
+    if (proxyResult?.error && !options?.silent) showXApiErrorToast(proxyResult.error)
+    return proxyResult ?? { posts: [], error: normalizeProxyError({ code: 'network_error' }) }
   }
 
   let bearer = localStorage.getItem('x_bearer') || ''
@@ -69,7 +83,7 @@ export async function fetchRealPosts(query: string): Promise<XPost[]> {
     const input = prompt(
       'Enter X Bearer token (dev only — prefer `X_BEARER_TOKEN=... npx vercel dev`).\n\nGet from: developer.x.com',
     )
-    if (!input) return []
+    if (!input) return proxyResult ?? { posts: [] }
     localStorage.setItem('x_bearer', input)
     bearer = input
   }
@@ -77,27 +91,49 @@ export async function fetchRealPosts(query: string): Promise<XPost[]> {
   try {
     const url = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=20&tweet.fields=public_metrics,created_at,author_id&expansions=author_id&user.fields=username`
     const res = await fetch(url, { headers: { Authorization: `Bearer ${bearer}` } })
-    if (!res.ok) {
-      const t = await res.text().catch(() => '')
-      throw new Error(`X API ${res.status}: ${t.slice(0, 120)}`)
+    const bodyText = await res.text()
+    let data: { data?: unknown[]; includes?: { users?: { id?: string; username?: string }[] } } = {}
+    try {
+      data = JSON.parse(bodyText)
+    } catch {
+      /* ignore */
     }
-    const data = await res.json()
-    return (data.data || []).map((t: { text?: string; author_id?: string; created_at?: string; public_metrics?: { like_count?: number; retweet_count?: number } }, i: number) => {
-      const user = (data.includes?.users || []).find((u: { id?: string }) => u.id === t.author_id) || {}
+
+    if (!res.ok) {
+      let parsed: Record<string, unknown> = {}
+      try {
+        parsed = JSON.parse(bodyText)
+      } catch {
+        parsed = { detail: bodyText.slice(0, 120) }
+      }
+      const error = normalizeProxyError(parsed, res.status)
+      if (!options?.silent) showXApiErrorToast(error)
+      return { posts: [], error }
+    }
+
+    const posts = (data.data || []).map((t, i) => {
+      const tweet = t as {
+        text?: string
+        author_id?: string
+        created_at?: string
+        public_metrics?: { like_count?: number; retweet_count?: number }
+      }
+      const user = (data.includes?.users || []).find(u => u.id === tweet.author_id) || {}
       return {
         id: Date.now() + i,
-        text: t.text || '',
-        username: (user as { username?: string }).username || 'xuser',
-        timestamp: t.created_at || new Date().toISOString(),
-        likes: t.public_metrics?.like_count || 0,
-        retweets: t.public_metrics?.retweet_count || 0,
+        text: tweet.text || '',
+        username: user.username || 'xuser',
+        timestamp: tweet.created_at || new Date().toISOString(),
+        likes: tweet.public_metrics?.like_count || 0,
+        retweets: tweet.public_metrics?.retweet_count || 0,
         sentiment: 0.2,
       }
     })
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'check token / rate limit / app permissions'
-    toast.error('Real X fetch failed: ' + msg)
-    return []
+    return { posts }
+  } catch {
+    const error = normalizeProxyError({ code: 'network_error' })
+    if (!options?.silent) showXApiErrorToast(error)
+    return { posts: [], error }
   }
 }
 

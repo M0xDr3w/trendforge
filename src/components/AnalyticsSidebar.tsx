@@ -7,50 +7,50 @@ import {
   getRisingClusters,
   computeFeedStats,
 } from '../lib/analytics'
+import { Panel, HudLabel, StatPill, GlowDivider } from './ui'
+import { RisingClustersEmpty } from './empty/EmptyStates'
 
 interface AnalyticsSidebarProps {
   posts: XPost[]
   clusters: Cluster[]
   onSelectCluster?: (name: string) => void
+  onSyncReal?: () => void
 }
 
 const THEME_COLORS = ['#e6002e', '#00e5ff', '#00ff88', '#ff6b35', '#a855f7', '#fbbf24', '#64748b']
 const SENTIMENT_COLORS = ['#ef4444', '#f97316', '#64748b', '#22c55e', '#00ff88']
 
-export function AnalyticsSidebar({ posts, clusters, onSelectCluster }: AnalyticsSidebarProps) {
+export function AnalyticsSidebar({ posts, clusters, onSelectCluster, onSyncReal }: AnalyticsSidebarProps) {
   const themes = computeThemeFrequency(clusters)
   const histogram = computeSentimentHistogram(posts)
   const rising = getRisingClusters(clusters)
   const stats = computeFeedStats(posts, clusters)
 
   return (
-    <div className="bg-[#0a0a0f] border border-[#22222a] rounded-3xl p-4 space-y-4">
+    <Panel glow className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="hud text-xs tracking-[2px] text-[#666] flex items-center gap-2">
-          <BarChart3 size={14} /> ANALYTICS
-        </div>
-        <div className="text-[10px] text-[#555] hud">{stats.postCount} posts · {stats.clusterCount} themes</div>
+        <HudLabel className="flex items-center gap-2 text-xs tracking-[2px]">
+          <BarChart3 size={14} /> Analytics
+        </HudLabel>
+        <HudLabel className="text-[10px] text-[var(--muted)]">
+          {stats.postCount} posts · {stats.clusterCount} themes
+        </HudLabel>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="bg-[#111] border border-[#222] rounded-xl p-2">
-          <div className="text-[10px] text-[#666] hud">AVG SENT</div>
-          <div className={`text-sm font-semibold ${stats.avgSentiment >= 0 ? 'text-[#00ff88]' : 'text-red-400'}`}>
-            {stats.avgSentiment > 0 ? '+' : ''}{stats.avgSentiment}
-          </div>
-        </div>
-        <div className="bg-[#111] border border-[#222] rounded-xl p-2">
-          <div className="text-[10px] text-[#666] hud">POSITIVE</div>
-          <div className="text-sm font-semibold text-[#00e5ff]">{stats.positivePct}%</div>
-        </div>
-        <div className="bg-[#111] border border-[#222] rounded-xl p-2">
-          <div className="text-[10px] text-[#666] hud">HOT</div>
-          <div className="text-sm font-semibold text-[#e6002e]">{stats.hotClusters}</div>
-        </div>
+      <div className="grid grid-cols-3 gap-2">
+        <StatPill
+          label="Avg sent"
+          value={`${stats.avgSentiment > 0 ? '+' : ''}${stats.avgSentiment}`}
+          variant={stats.avgSentiment >= 0 ? 'positive' : 'negative'}
+        />
+        <StatPill label="Positive" value={`${stats.positivePct}%`} variant="cyan" />
+        <StatPill label="Hot" value={stats.hotClusters} variant="accent" />
       </div>
+
+      <GlowDivider />
 
       <div>
-        <div className="text-xs text-[#888] mb-2 flex items-center gap-1">
+        <div className="mb-2 flex items-center gap-1 text-xs text-[var(--muted)]">
           <Activity size={12} /> Theme distribution
         </div>
         <div className="h-36">
@@ -61,7 +61,7 @@ export function AnalyticsSidebar({ posts, clusters, onSelectCluster }: Analytics
                 type="category"
                 dataKey="name"
                 width={88}
-                tick={{ fill: '#888', fontSize: 10 }}
+                tick={{ fill: '#88889a', fontSize: 10, fontFamily: 'JetBrains Mono' }}
                 tickFormatter={(v: string) => (v.length > 12 ? v.slice(0, 11) + '…' : v)}
               />
               <Tooltip
@@ -81,12 +81,14 @@ export function AnalyticsSidebar({ posts, clusters, onSelectCluster }: Analytics
         </div>
       </div>
 
+      <GlowDivider />
+
       <div>
-        <div className="text-xs text-[#888] mb-2">Sentiment histogram</div>
+        <HudLabel className="mb-2 block text-[10px]">Sentiment histogram</HudLabel>
         <div className="h-28">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={histogram} margin={{ left: -20, right: 4, top: 4, bottom: 0 }}>
-              <XAxis dataKey="label" tick={{ fill: '#666', fontSize: 9 }} />
+              <XAxis dataKey="label" tick={{ fill: '#88889a', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
               <YAxis hide />
               <Tooltip
                 contentStyle={{ background: '#111', border: '1px solid #333', borderRadius: 8, fontSize: 12 }}
@@ -105,43 +107,47 @@ export function AnalyticsSidebar({ posts, clusters, onSelectCluster }: Analytics
         </div>
       </div>
 
+      <GlowDivider />
+
       <div>
-        <div className="text-xs text-[#888] mb-2 flex items-center gap-1">
+        <div className="mb-2 flex items-center gap-1 text-xs text-[var(--muted)]">
           <TrendingUp size={12} /> Rising clusters
         </div>
         <div className="space-y-1.5">
           {rising.length === 0 ? (
-            <div className="text-xs text-[#555] py-2">Collecting velocity data…</div>
+            <RisingClustersEmpty onSyncReal={onSyncReal} />
           ) : (
             rising.map(r => (
               <button
                 key={r.name}
                 type="button"
                 onClick={() => onSelectCluster?.(r.name)}
-                className="w-full text-left bg-[#111] border border-[#222] rounded-lg px-2.5 py-2 hover:border-[#e6002e]/50 transition-colors"
+                className="w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--panel)] px-2.5 py-2 text-left transition-colors hover:border-[var(--border-glow)]"
               >
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-medium truncate pr-2">{r.name}</span>
+                <div className="flex items-center justify-between">
+                  <span className="truncate pr-2 text-xs font-medium">{r.name}</span>
                   <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${
                       r.momentum === 'hot'
-                        ? 'bg-[#e6002e]/20 text-[#e6002e]'
+                        ? 'bg-[var(--accent)]/20 text-[var(--accent)]'
                         : r.momentum === 'warm'
-                          ? 'bg-[#00e5ff]/15 text-[#00e5ff]'
-                          : 'bg-[#222] text-[#888]'
+                          ? 'bg-[var(--cyan)]/15 text-[var(--cyan)]'
+                          : 'bg-[var(--border)] text-[var(--muted)]'
                     }`}
                   >
-                    {r.momentum === 'hot' ? '🔥' : r.momentum === 'warm' ? '↑' : '—'} {r.shift > 0 ? '+' : ''}{r.shift.toFixed(1)}
+                    {r.momentum === 'hot' ? '🔥' : r.momentum === 'warm' ? '↑' : '—'} {r.shift > 0 ? '+' : ''}
+                    {r.shift.toFixed(1)}
                   </span>
                 </div>
-                <div className="text-[10px] text-[#666] mt-0.5">
-                  {r.volume} posts · sent {r.avgSentiment > 0 ? '+' : ''}{r.avgSentiment.toFixed(2)}
+                <div className="mt-0.5 text-[10px] text-[var(--muted)]">
+                  {r.volume} posts · sent {r.avgSentiment > 0 ? '+' : ''}
+                  {r.avgSentiment.toFixed(2)}
                 </div>
               </button>
             ))
           )}
         </div>
       </div>
-    </div>
+    </Panel>
   )
 }

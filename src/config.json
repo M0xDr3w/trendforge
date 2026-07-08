@@ -12,5 +12,12 @@
   "liveRealQuery": "AI OR agents OR grok OR embeddings",
   "maxPosts": 35,
   "allowClientBearer": false,
-  "defaultSyncQuery": "AI agents"
+  "defaultSyncQuery": "AI agents",
+  "maxRadars": 5,
+  "defaultQueries": [
+    "AI agents",
+    "grok OR xai OR x.com",
+    "embeddings OR vector OR RAG",
+    "AI OR agents OR grok OR embeddings"
+  ]
 }

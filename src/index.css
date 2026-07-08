@@ -3,39 +3,67 @@
 @tailwind utilities;
 
 :root {
-  --bg: #000000;
-  --panel: rgba(10, 10, 15, 0.9);
+  --bg: #050508;
+  --panel: rgba(12, 12, 18, 0.92);
+  --panel-glass: rgba(12, 12, 18, 0.72);
   --border: #22222a;
+  --border-glow: rgba(230, 0, 46, 0.35);
   --text: #f0f0f5;
   --muted: #88889a;
   --accent: #e6002e;
   --cyan: #00e5ff;
   --green: #00ff88;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1.25rem;
+  --shadow-glow: 0 0 40px rgba(230, 0, 46, 0.08), 0 0 80px rgba(0, 229, 255, 0.04);
+  --font-display: 'Space Grotesk', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-display);
 }
 
-/* Subtle tech grid background */
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Ambient grid + radial glow */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background-image: 
-    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
-  background-size: 60px 60px;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 56px 56px;
+  pointer-events: none;
+  z-index: -2;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(230, 0, 46, 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 50%, rgba(0, 229, 255, 0.06), transparent 50%);
   pointer-events: none;
   z-index: -1;
 }
 
 .hud {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  letter-spacing: 1.5px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.panel-glow {
+  box-shadow: var(--shadow-glow);
+  border-color: rgba(230, 0, 46, 0.25);
 }
 
 .neo-btn {
@@ -43,34 +71,100 @@ body::before {
   border: 1px solid var(--border);
   color: var(--text);
   transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
-  font-weight: 500;
-  letter-spacing: 0.5px;
 }
 
-.neo-btn:hover {
+.neo-btn:hover:not(:disabled) {
   border-color: var(--accent);
-  background: rgba(25, 25, 30, 0.95);
+  background: rgba(22, 22, 28, 0.95);
+  box-shadow: 0 0 20px rgba(230, 0, 46, 0.12);
 }
 
-.neo-btn.active, .neo-btn.primary {
+.neo-btn.active,
+.neo-btn.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
+  box-shadow: 0 0 24px rgba(230, 0, 46, 0.25);
 }
 
 .post {
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .post:hover {
-  border-color: var(--cyan);
+  border-color: rgba(0, 229, 255, 0.45);
   transform: translateY(-1px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
 }
 
 .cluster-card {
-  border-left: 3px solid var(--accent);
+  border-left-width: 3px;
+  border-left-style: solid;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cluster-card:hover {
+  box-shadow: 0 0 28px rgba(230, 0, 46, 0.08);
 }
 
 .alert {
   border-left: 3px solid var(--green);
+}
+
+.mobile-action-bar {
+  background: linear-gradient(to top, rgba(5, 5, 8, 0.98) 70%, transparent);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .post:hover,
+  .cluster-card:hover {
+    transform: none;
+  }
+
+  .radar-sweep {
+    animation: none !important;
+  }
+
+  .shimmer {
+    animation: none !important;
+    opacity: 0.35;
+  }
+}
+
+@keyframes radar-sweep {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.radar-sweep {
+  transform-origin: 50px 50px;
+  animation: radar-sweep 3.5s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.65;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+
+.shimmer {
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@media (min-width: 1024px) {
+  .mobile-action-bar {
+    display: none;
+  }
 }

@@ -26,6 +26,14 @@ export interface Insight {
   action: string
 }
 
+export interface SavedRadar {
+  id: string
+  name: string
+  query: string
+  createdAt: string
+  lastSynced?: string
+}
+
 export interface TrendForgeConfig {
   keywordBuckets: Record<string, string[]>
   mockFeedIntervalMs: number
@@ -34,4 +42,6 @@ export interface TrendForgeConfig {
   maxPosts: number
   allowClientBearer: boolean
   defaultSyncQuery: string
+  maxRadars: number
+  defaultQueries: string[]
 }
