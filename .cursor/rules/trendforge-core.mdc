@@ -1,0 +1,12 @@
+---
+description: Core TrendForge stack, secrets, and verification habits
+alwaysApply: true
+---
+
+# TrendForge core
+
+- Stack: React 19 + Vite + Tailwind 4 + Vercel serverless `api/x-search.js`
+- Production: `https://trendforge-opal.vercel.app`
+- Secrets: `X_BEARER_TOKEN` only in Vercel / local env — never in client code or git
+- Prefer pure helpers in `src/lib/`; keep `App.tsx` as orchestration
+- After meaningful UI/API changes: `npm run lint && npm run test && npm run build`
