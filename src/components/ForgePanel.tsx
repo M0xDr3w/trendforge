@@ -12,12 +12,14 @@ interface ForgePanelProps {
   forgeMode: ForgeMode
   forgeUrl: string
   forgeApiKey: string
+  forgeModel: string
   llmLoading: boolean
   llmStreamPreview: string
   onCustomTopicChange: (value: string) => void
   onForgeModeChange: (mode: ForgeMode) => void
   onForgeUrlChange: (url: string) => void
   onForgeApiKeyChange: (apiKey: string) => void
+  onForgeModelChange: (model: string) => void
   onForge: () => void
   onCopyForgePrompt: () => void
   onAnalyzeWithGrok: () => void
@@ -32,12 +34,14 @@ export function ForgePanel({
   forgeMode,
   forgeUrl,
   forgeApiKey,
+  forgeModel,
   llmLoading,
   llmStreamPreview,
   onCustomTopicChange,
   onForgeModeChange,
   onForgeUrlChange,
   onForgeApiKeyChange,
+  onForgeModelChange,
   onForge,
   onCopyForgePrompt,
   onAnalyzeWithGrok,
@@ -95,8 +99,15 @@ export function ForgePanel({
       <FieldInput
         value={forgeUrl}
         onChange={e => onForgeUrlChange(e.target.value)}
-        placeholder="Gateway URL (Ollama :11434, LM Studio :1234/v1, …)"
+        placeholder="Gateway URL (http://127.0.0.1:11434)"
         aria-label="LLM gateway base URL"
+        className="mb-2 text-xs"
+      />
+      <FieldInput
+        value={forgeModel}
+        onChange={e => onForgeModelChange(e.target.value)}
+        placeholder="Model tag (e.g. llama3.2)"
+        aria-label="LLM model name"
         className="mb-2 text-xs"
       />
       <FieldInput
@@ -111,13 +122,14 @@ export function ForgePanel({
       {!llmReady && (
         <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
           Paste a local OpenAI-compatible base URL to unlock LLM mode (with or without trailing /v1).
-          Templates work offline anytime.
+          For Ollama use <span className="text-[var(--text)]">http://127.0.0.1:11434</span> and a real model tag from{' '}
+          <span className="text-[var(--text)]">ollama list</span>.
         </p>
       )}
       {llmReady && (
         <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
-          Examples: <span className="text-[var(--text)]">http://127.0.0.1:11434</span> (Ollama) ·{' '}
-          <span className="text-[var(--text)]">http://127.0.0.1:1234/v1</span> (LM Studio). Key stays in sessionStorage (clears when the tab closes).
+          Ollama listens on localhost only by default — use 127.0.0.1, not a LAN IP. Key stays in sessionStorage
+          (clears when the tab closes).
         </p>
       )}
 

@@ -24,9 +24,11 @@ import {
   forgeContent,
   formatForgeLlmError,
   loadForgeApiKey,
+  loadForgeModel,
   loadForgeUrl,
   parseForgeResponse,
   saveForgeApiKey,
+  saveForgeModel,
   saveForgeUrl,
   type ForgeMode,
 } from './lib/forge'
@@ -81,6 +83,7 @@ function App() {
   const [forgeMode, setForgeMode] = useState<ForgeMode>('templates')
   const [forgeUrl, setForgeUrl] = useState(() => loadForgeUrl())
   const [forgeApiKey, setForgeApiKey] = useState(() => loadForgeApiKey())
+  const [forgeModel, setForgeModel] = useState(() => loadForgeModel())
   const [llmLoading, setLlmLoading] = useState(false)
   const [llmStreamPreview, setLlmStreamPreview] = useState('')
   const [alertsEnabled, setAlertsEnabled] = useState(() => loadAlertsEnabled())
@@ -128,6 +131,10 @@ function App() {
   useEffect(() => {
     saveForgeApiKey(forgeApiKey)
   }, [forgeApiKey])
+
+  useEffect(() => {
+    saveForgeModel(forgeModel)
+  }, [forgeModel])
 
   const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
@@ -281,6 +288,7 @@ function App() {
           const response = await callForgeLlm(forgeUrl.trim(), prompt, {
             stream: true,
             apiKey: forgeApiKey,
+            model: forgeModel,
             onChunk: partial => setLlmStreamPreview(partial),
           })
           ideas = parseForgeResponse(response)
@@ -304,7 +312,7 @@ function App() {
     } finally {
       forgeInFlightRef.current = false
     }
-  }, [selectedCluster, customTopic, forgeMode, forgeUrl, forgeApiKey, insights])
+  }, [selectedCluster, customTopic, forgeMode, forgeUrl, forgeApiKey, forgeModel, insights])
 
   const copyForgePrompt = useCallback(() => {
     const currentSparks = selectedCluster
@@ -626,12 +634,14 @@ Tags: trendforge,signals,forge`).catch(() => {})
               forgeMode={forgeMode}
               forgeUrl={forgeUrl}
               forgeApiKey={forgeApiKey}
+              forgeModel={forgeModel}
               llmLoading={llmLoading}
               llmStreamPreview={llmStreamPreview}
               onCustomTopicChange={setCustomTopic}
               onForgeModeChange={setForgeMode}
               onForgeUrlChange={setForgeUrl}
               onForgeApiKeyChange={setForgeApiKey}
+              onForgeModelChange={setForgeModel}
               onForge={forge}
               onCopyForgePrompt={copyForgePrompt}
               onAnalyzeWithGrok={analyzeWithGrok}

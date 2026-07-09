@@ -3,7 +3,9 @@ import { forgeContent as templateForgeContent } from './narrative'
 
 export const FORGE_URL_STORAGE_KEY = 'trendforge-forge-url'
 export const FORGE_API_KEY_STORAGE_KEY = 'trendforge-forge-api-key'
+export const FORGE_MODEL_STORAGE_KEY = 'trendforge-forge-model'
 export const FORGE_LLM_TIMEOUT_MS = 30_000
+export const FORGE_DEFAULT_MODEL = 'llama3.2'
 
 export type ForgeMode = 'templates' | 'llm'
 
@@ -85,6 +87,25 @@ export function saveForgeApiKey(apiKey: string): void {
       sessionStorage.setItem(FORGE_API_KEY_STORAGE_KEY, apiKey.trim())
     } else {
       sessionStorage.removeItem(FORGE_API_KEY_STORAGE_KEY)
+    }
+  } catch {}
+}
+
+export function loadForgeModel(): string {
+  try {
+    return localStorage.getItem(FORGE_MODEL_STORAGE_KEY) || FORGE_DEFAULT_MODEL
+  } catch {
+    return FORGE_DEFAULT_MODEL
+  }
+}
+
+export function saveForgeModel(model: string): void {
+  try {
+    const trimmed = model.trim()
+    if (trimmed) {
+      localStorage.setItem(FORGE_MODEL_STORAGE_KEY, trimmed)
+    } else {
+      localStorage.removeItem(FORGE_MODEL_STORAGE_KEY)
     }
   } catch {}
 }
@@ -213,10 +234,19 @@ function mapHttpError(status: number, body: string): ForgeLlmError {
     )
   }
   if (status === 404) {
+    const lower = body.toLowerCase()
+    if (lower.includes('model') && lower.includes('not found')) {
+      return new ForgeLlmError(
+        'http',
+        'Model not found on gateway',
+        'Set the model field to an installed tag (e.g. llama3.2). Check with: ollama list',
+        status,
+      )
+    }
     return new ForgeLlmError(
       'http',
       'Chat completions endpoint not found',
-      'Expected POST …/v1/chat/completions. Try with or without /v1 on the base URL.',
+      'Expected POST …/v1/chat/completions. For Ollama use http://127.0.0.1:11434 (not a LAN IP unless OLLAMA_HOST is set).',
       status,
     )
   }
@@ -309,6 +339,8 @@ export interface CallForgeLlmOptions {
   signal?: AbortSignal
   /** Optional Bearer token for cloud OpenAI-compatible gateways (sessionStorage only). */
   apiKey?: string
+  /** Model tag for the gateway (Ollama needs a real tag like llama3.2, not "default"). */
+  model?: string
 }
 
 function buildAuthHeaders(apiKey?: string): Record<string, string> {
@@ -361,7 +393,7 @@ export async function callForgeLlm(
   ]
 
   const bodyBase = {
-    model: 'default',
+    model: options.model?.trim() || FORGE_DEFAULT_MODEL,
     messages,
     temperature: 0.75,
     max_tokens: 900,
