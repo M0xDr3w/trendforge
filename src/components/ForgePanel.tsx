@@ -49,7 +49,7 @@ export function ForgePanel({
     .split('\n')
     .map(l => l.trim())
     .filter(Boolean)
-    .slice(0, 5)
+    .slice(-5)
 
   return (
     <Panel glow padding="md" className="relative overflow-hidden">
@@ -117,7 +117,7 @@ export function ForgePanel({
       {llmReady && (
         <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
           Examples: <span className="text-[var(--text)]">http://127.0.0.1:11434</span> (Ollama) ·{' '}
-          <span className="text-[var(--text)]">http://127.0.0.1:1234/v1</span> (LM Studio). Key stays in localStorage only.
+          <span className="text-[var(--text)]">http://127.0.0.1:1234/v1</span> (LM Studio). Key stays in sessionStorage (clears when the tab closes).
         </p>
       )}
 

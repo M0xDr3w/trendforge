@@ -96,6 +96,11 @@ describe('formatForgeLlmError', () => {
     })
   })
 
+  it('surfaces cancelled separately from timeout', () => {
+    const err = new ForgeLlmError('cancelled', 'LLM forge cancelled', 'aborted')
+    expect(formatForgeLlmError(err).title).toBe('LLM forge cancelled')
+  })
+
   it('falls back for unknown errors', () => {
     expect(formatForgeLlmError('boom')).toEqual({
       title: 'LLM forge failed — using templates',

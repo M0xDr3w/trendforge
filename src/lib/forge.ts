@@ -9,6 +9,7 @@ export type ForgeMode = 'templates' | 'llm'
 
 export type ForgeLlmErrorCode =
   | 'timeout'
+  | 'cancelled'
   | 'network'
   | 'http'
   | 'empty'
@@ -61,7 +62,17 @@ export function saveForgeUrl(url: string): void {
 
 export function loadForgeApiKey(): string {
   try {
-    return localStorage.getItem(FORGE_API_KEY_STORAGE_KEY) || ''
+    // Prefer sessionStorage (clears when the tab closes). Migrate any older
+    // localStorage value once, then remove it so the key is not long-lived.
+    const fromSession = sessionStorage.getItem(FORGE_API_KEY_STORAGE_KEY)
+    if (fromSession) return fromSession
+    const legacy = localStorage.getItem(FORGE_API_KEY_STORAGE_KEY)
+    if (legacy) {
+      sessionStorage.setItem(FORGE_API_KEY_STORAGE_KEY, legacy)
+      localStorage.removeItem(FORGE_API_KEY_STORAGE_KEY)
+      return legacy
+    }
+    return ''
   } catch {
     return ''
   }
@@ -69,10 +80,11 @@ export function loadForgeApiKey(): string {
 
 export function saveForgeApiKey(apiKey: string): void {
   try {
+    localStorage.removeItem(FORGE_API_KEY_STORAGE_KEY)
     if (apiKey.trim()) {
-      localStorage.setItem(FORGE_API_KEY_STORAGE_KEY, apiKey.trim())
+      sessionStorage.setItem(FORGE_API_KEY_STORAGE_KEY, apiKey.trim())
     } else {
-      localStorage.removeItem(FORGE_API_KEY_STORAGE_KEY)
+      sessionStorage.removeItem(FORGE_API_KEY_STORAGE_KEY)
     }
   } catch {}
 }
@@ -247,8 +259,8 @@ async function readSseStream(
   if (!res.body) {
     throw new ForgeLlmError(
       'empty',
-      'Empty stream from ForgeRouter',
-      'ForgeRouter returned no body. Try non-streaming or restart the gateway.',
+      'Empty stream from LLM gateway',
+      'Gateway returned no body. Try non-streaming or restart the gateway.',
     )
   }
 
@@ -257,30 +269,35 @@ async function readSseStream(
   let buffer = ''
   let content = ''
 
+  const consumeLine = (line: string) => {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('data:')) return
+    const data = trimmed.slice(5).trim()
+    if (!data || data === '[DONE]') return
+    try {
+      const parsed = JSON.parse(data) as unknown
+      const delta = extractDeltaContent(parsed)
+      if (delta) {
+        content += delta
+        onChunk?.(content)
+      }
+    } catch {
+      // ignore malformed SSE lines
+    }
+  }
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
     const parts = buffer.split('\n')
     buffer = parts.pop() || ''
-
-    for (const line of parts) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith('data:')) continue
-      const data = trimmed.slice(5).trim()
-      if (!data || data === '[DONE]') continue
-      try {
-        const parsed = JSON.parse(data) as unknown
-        const delta = extractDeltaContent(parsed)
-        if (delta) {
-          content += delta
-          onChunk?.(content)
-        }
-      } catch {
-        // ignore malformed SSE lines
-      }
-    }
+    for (const line of parts) consumeLine(line)
   }
+
+  // Flush decoder + any trailing data: line that never got a final newline.
+  buffer += decoder.decode()
+  if (buffer.trim()) consumeLine(buffer)
 
   return content.trim()
 }
@@ -290,7 +307,7 @@ export interface CallForgeLlmOptions {
   /** Prefer SSE streaming; falls back to a non-stream request if the gateway rejects stream. */
   stream?: boolean
   signal?: AbortSignal
-  /** Optional Bearer token for cloud OpenAI-compatible gateways (stored locally only). */
+  /** Optional Bearer token for cloud OpenAI-compatible gateways (sessionStorage only). */
   apiKey?: string
 }
 
@@ -305,6 +322,21 @@ function buildAuthHeaders(apiKey?: string): Record<string, string> {
   return headers
 }
 
+function abortError(timedOut: boolean): ForgeLlmError {
+  if (timedOut) {
+    return new ForgeLlmError(
+      'timeout',
+      `LLM gateway timed out after ${FORGE_LLM_TIMEOUT_MS / 1000}s`,
+      'Is the gateway running? Try a smaller model or raise timeout later.',
+    )
+  }
+  return new ForgeLlmError(
+    'cancelled',
+    'LLM forge cancelled',
+    'The request was aborted before the gateway finished.',
+  )
+}
+
 export async function callForgeLlm(
   baseUrl: string,
   prompt: string,
@@ -315,7 +347,11 @@ export async function callForgeLlm(
   const authHeaders = buildAuthHeaders(options.apiKey)
 
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), FORGE_LLM_TIMEOUT_MS)
+  let timedOut = false
+  const timeoutId = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, FORGE_LLM_TIMEOUT_MS)
   const onAbort = () => controller.abort()
   options.signal?.addEventListener('abort', onAbort)
 
@@ -378,11 +414,7 @@ export async function callForgeLlm(
       } catch (err) {
         if (err instanceof ForgeLlmError) throw err
         if (err instanceof Error && err.name === 'AbortError') {
-          throw new ForgeLlmError(
-            'timeout',
-            `LLM gateway timed out after ${FORGE_LLM_TIMEOUT_MS / 1000}s`,
-            'Is the gateway running? Try a smaller model or raise timeout later.',
-          )
+          throw abortError(timedOut)
         }
         // Network / stream parse issues → try non-stream once
       }
@@ -416,11 +448,7 @@ export async function callForgeLlm(
   } catch (err) {
     if (err instanceof ForgeLlmError) throw err
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new ForgeLlmError(
-        'timeout',
-        `LLM gateway timed out after ${FORGE_LLM_TIMEOUT_MS / 1000}s`,
-        'Is the gateway running? Try a smaller model or raise timeout later.',
-      )
+      throw abortError(timedOut)
     }
     throw new ForgeLlmError(
       'network',
