@@ -11,10 +11,15 @@ interface ForgePanelProps {
   forgedFlash: boolean
   forgeMode: ForgeMode
   forgeUrl: string
+  forgeApiKey: string
+  forgeModel: string
   llmLoading: boolean
+  llmStreamPreview: string
   onCustomTopicChange: (value: string) => void
   onForgeModeChange: (mode: ForgeMode) => void
   onForgeUrlChange: (url: string) => void
+  onForgeApiKeyChange: (apiKey: string) => void
+  onForgeModelChange: (model: string) => void
   onForge: () => void
   onCopyForgePrompt: () => void
   onAnalyzeWithGrok: () => void
@@ -28,10 +33,15 @@ export function ForgePanel({
   forgedFlash,
   forgeMode,
   forgeUrl,
+  forgeApiKey,
+  forgeModel,
   llmLoading,
+  llmStreamPreview,
   onCustomTopicChange,
   onForgeModeChange,
   onForgeUrlChange,
+  onForgeApiKeyChange,
+  onForgeModelChange,
   onForge,
   onCopyForgePrompt,
   onAnalyzeWithGrok,
@@ -39,6 +49,11 @@ export function ForgePanel({
 }: ForgePanelProps) {
   const reduceMotion = useReducedMotion()
   const llmReady = forgeUrl.trim().length > 0
+  const previewLines = llmStreamPreview
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean)
+    .slice(-5)
 
   return (
     <Panel glow padding="md" className="relative overflow-hidden">
@@ -84,10 +99,39 @@ export function ForgePanel({
       <FieldInput
         value={forgeUrl}
         onChange={e => onForgeUrlChange(e.target.value)}
-        placeholder="ForgeRouter URL (local only)..."
-        aria-label="ForgeRouter base URL"
+        placeholder="Gateway URL (http://127.0.0.1:11434)"
+        aria-label="LLM gateway base URL"
+        className="mb-2 text-xs"
+      />
+      <FieldInput
+        value={forgeModel}
+        onChange={e => onForgeModelChange(e.target.value)}
+        placeholder="Model tag (e.g. llama3.2)"
+        aria-label="LLM model name"
+        className="mb-2 text-xs"
+      />
+      <FieldInput
+        value={forgeApiKey}
+        onChange={e => onForgeApiKeyChange(e.target.value)}
+        type="password"
+        autoComplete="off"
+        placeholder="API key (optional — cloud gateways only)"
+        aria-label="Optional LLM gateway API key"
         className="mb-3 text-xs"
       />
+      {!llmReady && (
+        <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
+          Paste a local OpenAI-compatible base URL to unlock LLM mode (with or without trailing /v1).
+          For Ollama use <span className="text-[var(--text)]">http://127.0.0.1:11434</span> and a real model tag from{' '}
+          <span className="text-[var(--text)]">ollama list</span>.
+        </p>
+      )}
+      {llmReady && (
+        <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
+          Ollama listens on localhost only by default — use 127.0.0.1, not a LAN IP. Key stays in sessionStorage
+          (clears when the tab closes).
+        </p>
+      )}
 
       <FieldInput
         value={customTopic}
@@ -99,9 +143,20 @@ export function ForgePanel({
 
       {llmLoading ? (
         <div className="mb-3 space-y-2" aria-busy="true" aria-label="Generating forge content">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="h-8 animate-pulse rounded-[var(--radius-sm)] bg-[var(--panel)]" />
-          ))}
+          {previewLines.length > 0 ? (
+            <div className="max-h-36 space-y-1.5 overflow-y-auto rounded-[var(--radius-sm)] border border-[var(--cyan)]/30 bg-[var(--input-bg)] p-2.5">
+              <HudLabel className="mb-1 block text-[10px] text-[var(--cyan)]">Streaming…</HudLabel>
+              {previewLines.map((line, i) => (
+                <p key={`${i}-${line.slice(0, 12)}`} className="text-[12px] leading-snug text-[var(--text)]">
+                  {line}
+                </p>
+              ))}
+            </div>
+          ) : (
+            [1, 2, 3].map(i => (
+              <div key={i} className="h-8 animate-pulse rounded-[var(--radius-sm)] bg-[var(--panel)]" />
+            ))
+          )}
         </div>
       ) : (
         <NeoButton
@@ -139,7 +194,11 @@ export function ForgePanel({
         Ask Grok + X MCP
       </NeoButton>
       <div className="mt-2 text-center text-[10px] text-[var(--muted)]" aria-live="polite">
-        {forgedFlash ? 'Copied to clipboard' : forgeMode === 'llm' && llmReady ? 'LLM mode — first idea copied' : 'First idea copied to clipboard'}
+        {forgedFlash
+          ? 'Copied to clipboard'
+          : forgeMode === 'llm' && llmReady
+            ? 'LLM mode — streams from your gateway, falls back to templates on error'
+            : 'First idea copied to clipboard'}
       </div>
 
       {sparks.length > 0 && (

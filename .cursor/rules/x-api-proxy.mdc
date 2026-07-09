@@ -1,0 +1,12 @@
+---
+description: X API proxy contract and sync-all error handling
+globs: api/**,src/lib/feed.ts,src/lib/xApiErrors.ts
+alwaysApply: false
+---
+
+# X API proxy
+
+- Proxy returns structured `{ error, code, hint }` — preserve that contract
+- Sync-all: abort only on fatal codes (token/auth/credits); continue on `rate_limit` / `network_error`
+- Do not reintroduce client bearer in production (`allowClientBearer` stays false)
+- Prefer App-only Bearer for `X_BEARER_TOKEN`; OAuth user tokens belong to MCP/local flows only

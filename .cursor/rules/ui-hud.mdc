@@ -1,0 +1,12 @@
+---
+description: TrendForge HUD UI tokens and form control patterns
+globs: src/components/**/*.tsx,src/index.css
+alwaysApply: false
+---
+
+# UI HUD
+
+- Use design tokens (`--text`, `--muted`, `--input-bg`) and shared primitives (`FieldInput`, `NeoButton`, `Panel`)
+- Form controls must set explicit text color (no black-on-black)
+- Match existing HUD patterns; do not invent a second design system
+- Prefer `FieldInput` / `tf-field` for inputs so Tailwind instance utilities can override defaults
