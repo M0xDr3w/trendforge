@@ -22,8 +22,11 @@ import {
   buildForgePrompt,
   callForgeLlm,
   forgeContent,
+  formatForgeLlmError,
+  loadForgeApiKey,
   loadForgeUrl,
   parseForgeResponse,
+  saveForgeApiKey,
   saveForgeUrl,
   type ForgeMode,
 } from './lib/forge'
@@ -77,7 +80,9 @@ function App() {
   const [syncingRadarId, setSyncingRadarId] = useState<string | null>(null)
   const [forgeMode, setForgeMode] = useState<ForgeMode>('templates')
   const [forgeUrl, setForgeUrl] = useState(() => loadForgeUrl())
+  const [forgeApiKey, setForgeApiKey] = useState(() => loadForgeApiKey())
   const [llmLoading, setLlmLoading] = useState(false)
+  const [llmStreamPreview, setLlmStreamPreview] = useState('')
   const [alertsEnabled, setAlertsEnabled] = useState(() => loadAlertsEnabled())
   const [browserNotify, setBrowserNotify] = useState(() => loadBrowserNotify())
   const liveRealToastShownRef = useRef(false)
@@ -119,6 +124,10 @@ function App() {
   useEffect(() => {
     saveForgeUrl(forgeUrl)
   }, [forgeUrl])
+
+  useEffect(() => {
+    saveForgeApiKey(forgeApiKey)
+  }, [forgeApiKey])
 
   const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
@@ -266,18 +275,23 @@ function App() {
     try {
       if (forgeMode === 'llm' && forgeUrl.trim()) {
         setLlmLoading(true)
+        setLlmStreamPreview('')
         try {
           const prompt = buildForgePrompt(selectedCluster, currentSparks, insights, customTopic || undefined)
-          const response = await callForgeLlm(forgeUrl.trim(), prompt)
+          const response = await callForgeLlm(forgeUrl.trim(), prompt, {
+            stream: true,
+            apiKey: forgeApiKey,
+            onChunk: partial => setLlmStreamPreview(partial),
+          })
           ideas = parseForgeResponse(response)
           toast.success('LLM forged content', { description: ideas[0]?.slice(0, 75) + '...' })
         } catch (err) {
           ideas = forgeContent(selectedCluster, customTopic || undefined)
-          toast.error('LLM forge failed — using templates', {
-            description: err instanceof Error ? err.message : 'Unknown error',
-          })
+          const formatted = formatForgeLlmError(err)
+          toast.error(formatted.title, { description: formatted.description, duration: 8000 })
         } finally {
           setLlmLoading(false)
+          setLlmStreamPreview('')
         }
       } else {
         ideas = forgeContent(selectedCluster, customTopic || undefined)
@@ -290,7 +304,7 @@ function App() {
     } finally {
       forgeInFlightRef.current = false
     }
-  }, [selectedCluster, customTopic, forgeMode, forgeUrl, insights])
+  }, [selectedCluster, customTopic, forgeMode, forgeUrl, forgeApiKey, insights])
 
   const copyForgePrompt = useCallback(() => {
     const currentSparks = selectedCluster
@@ -611,10 +625,13 @@ Tags: trendforge,signals,forge`).catch(() => {})
               forgedFlash={forgedFlash}
               forgeMode={forgeMode}
               forgeUrl={forgeUrl}
+              forgeApiKey={forgeApiKey}
               llmLoading={llmLoading}
+              llmStreamPreview={llmStreamPreview}
               onCustomTopicChange={setCustomTopic}
               onForgeModeChange={setForgeMode}
               onForgeUrlChange={setForgeUrl}
+              onForgeApiKeyChange={setForgeApiKey}
               onForge={forge}
               onCopyForgePrompt={copyForgePrompt}
               onAnalyzeWithGrok={analyzeWithGrok}
