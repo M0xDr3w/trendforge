@@ -27,8 +27,11 @@ pnpm-debug.log*
 
 # Env / secrets (never commit)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+.env.save
+*.pem
 X_BEARER_TOKEN
+XAI_API_KEY
 .grok/config.toml
 .vercel

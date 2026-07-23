@@ -4,10 +4,18 @@ import { forgeContent as templateForgeContent } from './narrative'
 export const FORGE_URL_STORAGE_KEY = 'trendforge-forge-url'
 export const FORGE_API_KEY_STORAGE_KEY = 'trendforge-forge-api-key'
 export const FORGE_MODEL_STORAGE_KEY = 'trendforge-forge-model'
+export const FORGE_PROVIDER_STORAGE_KEY = 'trendforge-forge-provider'
 export const FORGE_LLM_TIMEOUT_MS = 30_000
 export const FORGE_DEFAULT_MODEL = 'llama3.2'
+/** Server-side proxy path — keeps XAI_API_KEY off the client. */
+export const GROK_PROXY_PATH = '/api/forge-chat'
+export const GROK_DEFAULT_MODEL = 'grok-4.5'
+export const LOCAL_DEFAULT_URL = 'http://127.0.0.1:11434'
+export const LOCAL_DEFAULT_MODEL = 'llama3.2'
 
 export type ForgeMode = 'templates' | 'llm'
+/** Intelligence path: Grok (server proxy) | local OpenAI-compat | custom URL. */
+export type ForgeProvider = 'grok' | 'local' | 'custom'
 
 export type ForgeLlmErrorCode =
   | 'timeout'
@@ -110,9 +118,36 @@ export function saveForgeModel(model: string): void {
   } catch {}
 }
 
+export function loadForgeProvider(): ForgeProvider {
+  try {
+    const raw = localStorage.getItem(FORGE_PROVIDER_STORAGE_KEY)
+    if (raw === 'grok' || raw === 'local' || raw === 'custom') return raw
+  } catch {}
+  return 'local'
+}
+
+export function saveForgeProvider(provider: ForgeProvider): void {
+  try {
+    localStorage.setItem(FORGE_PROVIDER_STORAGE_KEY, provider)
+  } catch {}
+}
+
+/** Defaults applied when switching provider (user can still override). */
+export function defaultsForProvider(provider: ForgeProvider): { url: string; model: string } {
+  switch (provider) {
+    case 'grok':
+      return { url: GROK_PROXY_PATH, model: GROK_DEFAULT_MODEL }
+    case 'local':
+      return { url: LOCAL_DEFAULT_URL, model: LOCAL_DEFAULT_MODEL }
+    default:
+      return { url: '', model: FORGE_DEFAULT_MODEL }
+  }
+}
+
 /**
- * Accepts either `http://host:port` or `http://host:port/v1` (and trailing slashes).
- * Always returns the full chat completions endpoint URL.
+ * Accepts either `http://host:port` or `http://host:port/v1` (and trailing slashes),
+ * or a same-origin relative path like `/api/forge-chat` (already the chat endpoint).
+ * Always returns the full chat completions endpoint URL (or relative path).
  */
 export function resolveChatCompletionsUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim()
@@ -120,9 +155,15 @@ export function resolveChatCompletionsUrl(baseUrl: string): string {
     throw new ForgeLlmError(
       'invalid_url',
       'LLM gateway URL is empty',
-      'Paste a base URL such as http://127.0.0.1:11434 (Ollama) or http://127.0.0.1:1234/v1 (LM Studio).',
+      'Paste a base URL such as http://127.0.0.1:11434 (Ollama), http://127.0.0.1:1234/v1 (LM Studio), or use the Grok preset.',
     )
   }
+
+  // Same-origin serverless proxy — already the chat completions path.
+  if (trimmed.startsWith('/')) {
+    return trimmed
+  }
+
   let parsed: URL
   try {
     parsed = new URL(trimmed)
@@ -130,7 +171,7 @@ export function resolveChatCompletionsUrl(baseUrl: string): string {
     throw new ForgeLlmError(
       'invalid_url',
       'LLM gateway URL is invalid',
-      'Use a full URL including http:// or https://',
+      'Use a full URL including http:// or https://, or a relative path like /api/forge-chat.',
     )
   }
   // Strip trailing /v1 or /v1/ so we never produce /v1/v1/chat/completions
@@ -139,6 +180,13 @@ export function resolveChatCompletionsUrl(baseUrl: string): string {
     path = path.slice(0, -3)
   }
   if (path === '/') path = ''
+  // Paths that already end with chat/completions (e.g. custom proxy) — leave alone.
+  if (path.endsWith('/chat/completions')) {
+    parsed.pathname = path
+    parsed.search = ''
+    parsed.hash = ''
+    return parsed.toString()
+  }
   parsed.pathname = `${path}/v1/chat/completions`
   parsed.search = ''
   parsed.hash = ''
@@ -147,10 +195,14 @@ export function resolveChatCompletionsUrl(baseUrl: string): string {
 
 export { templateForgeContent as forgeContent }
 
-const SYSTEM_PROMPT = `You are a sharp content strategist for X/Twitter and LinkedIn.
-Write specific, timely angles — not generic "AI is changing everything" filler.
+const SYSTEM_PROMPT = `You are a SpaceXAI content strategist working with a human operator (symbiotic, not autonomous).
+Write specific, timely angles for X/Twitter and LinkedIn from the cluster signals provided.
 Prefer concrete hooks, contrarian frames, and shippable thread openers.
-Never invent engagement metrics. Stay under ~40 words per angle.`
+Hard rules:
+- Never invent engagement metrics, follower counts, or "viral" claims.
+- Ground angles in the sample posts / shift signals when present.
+- Stay under ~40 words per angle.
+- Human gates the ship — you propose; they decide.`
 
 export function buildForgePrompt(
   cluster: Cluster | null,
@@ -225,6 +277,23 @@ export function formatForgeLlmError(err: unknown): { title: string; description:
 
 function mapHttpError(status: number, body: string): ForgeLlmError {
   const snippet = body.replace(/\s+/g, ' ').trim().slice(0, 160)
+  let parsed: { error?: string; code?: string; hint?: string } | null = null
+  try {
+    parsed = JSON.parse(body) as { error?: string; code?: string; hint?: string }
+  } catch {
+    parsed = null
+  }
+  if (parsed?.code === 'missing_xai_key' || parsed?.code === 'xai_unauthorized') {
+    return new ForgeLlmError(
+      'http',
+      parsed.error || 'Grok API key missing or invalid',
+      parsed.hint || 'Set XAI_API_KEY for vercel dev / Vercel, or paste a session key.',
+      status,
+    )
+  }
+  if (parsed?.hint && parsed?.error) {
+    return new ForgeLlmError('http', parsed.error, parsed.hint, status)
+  }
   if (status === 401 || status === 403) {
     return new ForgeLlmError(
       'http',
@@ -255,6 +324,14 @@ function mapHttpError(status: number, body: string): ForgeLlmError {
       'http',
       'LLM gateway rate limited',
       'Wait a moment and retry, or lower concurrent forge requests.',
+      status,
+    )
+  }
+  if (status === 503) {
+    return new ForgeLlmError(
+      'http',
+      parsed?.error || 'LLM gateway unavailable',
+      parsed?.hint || snippet || 'Service not configured or temporarily down.',
       status,
     )
   }
@@ -485,7 +562,7 @@ export async function callForgeLlm(
     throw new ForgeLlmError(
       'network',
       'Could not reach LLM gateway',
-      'Confirm the URL and that Ollama / LM Studio / ForgeRouter is listening locally.',
+      'Grok preset needs XAI_API_KEY on the server (vercel dev / Vercel env). Local needs Ollama / LM Studio / ForgeRouter listening.',
     )
   } finally {
     clearTimeout(timeoutId)
