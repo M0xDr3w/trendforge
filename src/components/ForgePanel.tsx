@@ -1,7 +1,8 @@
-import { Target, Lightbulb, Sparkles, Loader2 } from 'lucide-react'
+import { Target, Lightbulb, Sparkles, Loader2, Check, Pencil, X } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import type { Cluster } from '../lib/types'
-import type { ForgeMode } from '../lib/forge'
+import type { ForgeMode, ForgeProvider } from '../lib/forge'
+import type { LastForgeResult } from '../lib/preferences'
 import { GlowDivider, HudLabel, NeoButton, Panel, FieldInput } from './ui'
 
 interface ForgePanelProps {
@@ -10,13 +11,16 @@ interface ForgePanelProps {
   sparks: string[]
   forgedFlash: boolean
   forgeMode: ForgeMode
+  forgeProvider: ForgeProvider
   forgeUrl: string
   forgeApiKey: string
   forgeModel: string
   llmLoading: boolean
   llmStreamPreview: string
+  lastForge: LastForgeResult | null
   onCustomTopicChange: (value: string) => void
   onForgeModeChange: (mode: ForgeMode) => void
+  onForgeProviderChange: (provider: ForgeProvider) => void
   onForgeUrlChange: (url: string) => void
   onForgeApiKeyChange: (apiKey: string) => void
   onForgeModelChange: (model: string) => void
@@ -24,6 +28,7 @@ interface ForgePanelProps {
   onCopyForgePrompt: () => void
   onAnalyzeWithGrok: () => void
   onCopySparks: () => void
+  onPreference: (decision: 'accept' | 'edit' | 'reject') => void
 }
 
 export function ForgePanel({
@@ -32,13 +37,16 @@ export function ForgePanel({
   sparks,
   forgedFlash,
   forgeMode,
+  forgeProvider,
   forgeUrl,
   forgeApiKey,
   forgeModel,
   llmLoading,
   llmStreamPreview,
+  lastForge,
   onCustomTopicChange,
   onForgeModeChange,
+  onForgeProviderChange,
   onForgeUrlChange,
   onForgeApiKeyChange,
   onForgeModelChange,
@@ -46,9 +54,12 @@ export function ForgePanel({
   onCopyForgePrompt,
   onAnalyzeWithGrok,
   onCopySparks,
+  onPreference,
 }: ForgePanelProps) {
   const reduceMotion = useReducedMotion()
-  const llmReady = forgeUrl.trim().length > 0
+  const llmReady =
+    forgeMode === 'llm' &&
+    (forgeProvider === 'grok' || forgeUrl.trim().length > 0)
   const previewLines = llmStreamPreview
     .split('\n')
     .map(l => l.trim())
@@ -88,49 +99,90 @@ export function ForgePanel({
           variant={forgeMode === 'llm' ? 'active' : 'ghost'}
           className="flex-1"
           onClick={() => onForgeModeChange('llm')}
-          disabled={!llmReady}
           aria-pressed={forgeMode === 'llm'}
-          title={llmReady ? 'Use ForgeRouter LLM' : 'Set ForgeRouter URL below first'}
+          title="Use Grok, local gateway, or custom OpenAI-compatible URL"
         >
           LLM
         </NeoButton>
       </div>
 
-      <FieldInput
-        value={forgeUrl}
-        onChange={e => onForgeUrlChange(e.target.value)}
-        placeholder="Gateway URL (http://127.0.0.1:11434)"
-        aria-label="LLM gateway base URL"
-        className="mb-2 text-xs"
-      />
-      <FieldInput
-        value={forgeModel}
-        onChange={e => onForgeModelChange(e.target.value)}
-        placeholder="Model tag (e.g. llama3.2)"
-        aria-label="LLM model name"
-        className="mb-2 text-xs"
-      />
-      <FieldInput
-        value={forgeApiKey}
-        onChange={e => onForgeApiKeyChange(e.target.value)}
-        type="password"
-        autoComplete="off"
-        placeholder="API key (optional — cloud gateways only)"
-        aria-label="Optional LLM gateway API key"
-        className="mb-3 text-xs"
-      />
-      {!llmReady && (
-        <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
-          Paste a local OpenAI-compatible base URL to unlock LLM mode (with or without trailing /v1).
-          For Ollama use <span className="text-[var(--text)]">http://127.0.0.1:11434</span> and a real model tag from{' '}
-          <span className="text-[var(--text)]">ollama list</span>.
-        </p>
-      )}
-      {llmReady && (
-        <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
-          Ollama listens on localhost only by default — use 127.0.0.1, not a LAN IP. Key stays in sessionStorage
-          (clears when the tab closes).
-        </p>
+      {forgeMode === 'llm' && (
+        <>
+          <div className="mb-3 flex gap-1 rounded-[var(--radius-sm)] border border-[var(--border)] p-0.5">
+            {(
+              [
+                ['grok', 'Grok'],
+                ['local', 'Local'],
+                ['custom', 'Custom'],
+              ] as const
+            ).map(([id, label]) => (
+              <NeoButton
+                key={id}
+                size="xs"
+                variant={forgeProvider === id ? 'active' : 'ghost'}
+                className="flex-1"
+                onClick={() => onForgeProviderChange(id)}
+                aria-pressed={forgeProvider === id}
+              >
+                {label}
+              </NeoButton>
+            ))}
+          </div>
+
+          {forgeProvider !== 'grok' && (
+            <FieldInput
+              value={forgeUrl}
+              onChange={e => onForgeUrlChange(e.target.value)}
+              placeholder={
+                forgeProvider === 'local'
+                  ? 'http://127.0.0.1:11434 (Ollama) or :8123 (ForgeRouter)'
+                  : 'Gateway URL (https://…)'
+              }
+              aria-label="LLM gateway base URL"
+              className="mb-2 text-xs"
+            />
+          )}
+          <FieldInput
+            value={forgeModel}
+            onChange={e => onForgeModelChange(e.target.value)}
+            placeholder={forgeProvider === 'grok' ? 'grok-4.5' : 'Model tag (e.g. llama3.2)'}
+            aria-label="LLM model name"
+            className="mb-2 text-xs"
+          />
+          <FieldInput
+            value={forgeApiKey}
+            onChange={e => onForgeApiKeyChange(e.target.value)}
+            type="password"
+            autoComplete="off"
+            placeholder={
+              forgeProvider === 'grok'
+                ? 'Optional session key (else XAI_API_KEY on server)'
+                : 'API key (optional — cloud gateways only)'
+            }
+            aria-label="Optional LLM gateway API key"
+            className="mb-3 text-xs"
+          />
+          {forgeProvider === 'grok' && (
+            <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
+              Grok via server proxy <span className="text-[var(--text)]">/api/forge-chat</span>. Set{' '}
+              <span className="text-[var(--text)]">XAI_API_KEY</span> in Vercel /{' '}
+              <span className="text-[var(--text)]">vercel dev</span>. Session key is optional override
+              (sessionStorage only).
+            </p>
+          )}
+          {forgeProvider === 'local' && (
+            <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
+              Local OpenAI-compatible gateway. Ollama:{' '}
+              <span className="text-[var(--text)]">127.0.0.1:11434</span>. ForgeRouter:{' '}
+              <span className="text-[var(--text)]">127.0.0.1:8123</span>.
+            </p>
+          )}
+          {forgeProvider === 'custom' && !forgeUrl.trim() && (
+            <p className="mb-3 text-[11px] leading-snug text-[var(--muted)]">
+              Paste any OpenAI-compatible base URL (with or without trailing /v1).
+            </p>
+          )}
+        </>
       )}
 
       <FieldInput
@@ -164,11 +216,15 @@ export function ForgePanel({
           variant="primary"
           fullWidth
           className="relative hidden rounded-[var(--radius-md)] lg:flex"
-          disabled={llmLoading}
-          aria-label="Forge unique content angles and copy to clipboard"
+          disabled={llmLoading || (forgeMode === 'llm' && !llmReady)}
+          aria-label="Forge unique content angles"
         >
           {llmLoading ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Lightbulb size={16} aria-hidden />}
-          {forgeMode === 'llm' ? 'Forge with LLM' : 'Forge unique angles'}
+          {forgeMode === 'llm'
+            ? forgeProvider === 'grok'
+              ? 'Forge with Grok'
+              : 'Forge with LLM'
+            : 'Forge unique angles'}
         </NeoButton>
       )}
 
@@ -195,11 +251,67 @@ export function ForgePanel({
       </NeoButton>
       <div className="mt-2 text-center text-[10px] text-[var(--muted)]" aria-live="polite">
         {forgedFlash
-          ? 'Copied to clipboard'
+          ? 'Forged — results kept for export · human gate below'
           : forgeMode === 'llm' && llmReady
-            ? 'LLM mode — streams from your gateway, falls back to templates on error'
-            : 'First idea copied to clipboard'}
+            ? forgeProvider === 'grok'
+              ? 'Grok mode — server proxy, falls back to templates on error'
+              : 'LLM mode — streams from your gateway, falls back to templates on error'
+            : 'Templates always work offline · export uses last forge when present'}
       </div>
+
+      {lastForge && lastForge.angles.length > 0 && (
+        <>
+          <GlowDivider className="my-4" />
+          <HudLabel className="mb-2 block text-xs">
+            Last forge · {lastForge.source}
+            {lastForge.provider ? ` · ${lastForge.provider}` : ''}
+            {lastForge.model ? ` · ${lastForge.model}` : ''}
+          </HudLabel>
+          <div className="mb-3 max-h-48 space-y-1.5 overflow-y-auto">
+            {lastForge.angles.map((angle, i) => (
+              <div
+                key={`${i}-${angle.slice(0, 16)}`}
+                className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--input-bg)] p-2.5 text-[13px] leading-relaxed text-[var(--text)]"
+              >
+                <span className="mr-1.5 text-[10px] text-[var(--muted)]">{i + 1}.</span>
+                {angle}
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <NeoButton
+              size="xs"
+              variant="ghost"
+              className="flex-1"
+              onClick={() => onPreference('accept')}
+              aria-label="Accept forged angles for learn loop"
+            >
+              <Check size={12} aria-hidden /> Accept
+            </NeoButton>
+            <NeoButton
+              size="xs"
+              variant="ghost"
+              className="flex-1"
+              onClick={() => onPreference('edit')}
+              aria-label="Mark forge as edited for learn loop"
+            >
+              <Pencil size={12} aria-hidden /> Edit
+            </NeoButton>
+            <NeoButton
+              size="xs"
+              variant="ghost"
+              className="flex-1"
+              onClick={() => onPreference('reject')}
+              aria-label="Reject forged angles for learn loop"
+            >
+              <X size={12} aria-hidden /> Reject
+            </NeoButton>
+          </div>
+          <p className="mt-2 text-[10px] leading-snug text-[var(--muted)]">
+            Preferences stay local (learn loop). Export downloads these durable angles.
+          </p>
+        </>
+      )}
 
       {sparks.length > 0 && (
         <>

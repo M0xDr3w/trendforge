@@ -21,17 +21,28 @@ import {
 import {
   buildForgePrompt,
   callForgeLlm,
+  defaultsForProvider,
   forgeContent,
   formatForgeLlmError,
   loadForgeApiKey,
   loadForgeModel,
+  loadForgeProvider,
   loadForgeUrl,
   parseForgeResponse,
   saveForgeApiKey,
   saveForgeModel,
+  saveForgeProvider,
   saveForgeUrl,
   type ForgeMode,
+  type ForgeProvider,
 } from './lib/forge'
+import {
+  appendPreference,
+  loadLastForge,
+  saveLastForge,
+  type ForgeSource,
+  type LastForgeResult,
+} from './lib/preferences'
 import { Header } from './components/Header'
 import { FeedPanel } from './components/FeedPanel'
 import { ClusterPanel } from './components/ClusterPanel'
@@ -81,9 +92,11 @@ function App() {
   )
   const [syncingRadarId, setSyncingRadarId] = useState<string | null>(null)
   const [forgeMode, setForgeMode] = useState<ForgeMode>('templates')
+  const [forgeProvider, setForgeProvider] = useState<ForgeProvider>(() => loadForgeProvider())
   const [forgeUrl, setForgeUrl] = useState(() => loadForgeUrl())
   const [forgeApiKey, setForgeApiKey] = useState(() => loadForgeApiKey())
   const [forgeModel, setForgeModel] = useState(() => loadForgeModel())
+  const [lastForge, setLastForge] = useState<LastForgeResult | null>(() => loadLastForge())
   const [llmLoading, setLlmLoading] = useState(false)
   const [llmStreamPreview, setLlmStreamPreview] = useState('')
   const [alertsEnabled, setAlertsEnabled] = useState(() => loadAlertsEnabled())
@@ -107,6 +120,10 @@ function App() {
     clusters,
     insights,
     radars,
+    forgedAngles: lastForge?.angles ?? null,
+    forgeSource: lastForge?.source ?? null,
+    forgeModel: lastForge?.model ?? null,
+    forgeProvider: lastForge?.provider ?? null,
   }
 
   useEffect(() => {
@@ -135,6 +152,27 @@ function App() {
   useEffect(() => {
     saveForgeModel(forgeModel)
   }, [forgeModel])
+
+  useEffect(() => {
+    saveForgeProvider(forgeProvider)
+  }, [forgeProvider])
+
+  useEffect(() => {
+    if (lastForge) saveLastForge(lastForge)
+  }, [lastForge])
+
+  const handleForgeProviderChange = useCallback((provider: ForgeProvider) => {
+    setForgeProvider(provider)
+    const defaults = defaultsForProvider(provider)
+    if (provider === 'grok') {
+      setForgeUrl(defaults.url)
+      setForgeModel(defaults.model)
+    } else if (provider === 'local') {
+      setForgeUrl(prev => (prev.trim() && !prev.startsWith('/') ? prev : defaults.url))
+      setForgeModel(prev => (prev.trim() && prev !== 'grok-4.5' ? prev : defaults.model))
+    }
+    // custom: leave URL/model for the user
+  }, [])
 
   const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
@@ -267,6 +305,24 @@ function App() {
     toast.info('Post injected')
   }
 
+  const commitForgeResult = useCallback(
+    (ideas: string[], source: ForgeSource) => {
+      const topic = customTopic || selectedCluster?.name || 'emerging signal'
+      const result: LastForgeResult = {
+        angles: ideas,
+        topic,
+        clusterName: selectedCluster?.name ?? null,
+        source,
+        model: forgeMode === 'llm' ? forgeModel : undefined,
+        provider: forgeMode === 'llm' ? forgeProvider : undefined,
+        createdAt: new Date().toISOString(),
+      }
+      setLastForge(result)
+      saveLastForge(result)
+    },
+    [customTopic, selectedCluster, forgeMode, forgeModel, forgeProvider],
+  )
+
   const forge = useCallback(async () => {
     // Block re-entry so rapid taps can't launch overlapping LLM requests.
     if (forgeInFlightRef.current) return
@@ -278,23 +334,33 @@ function App() {
     const sparkNote = currentSparks.length > 0 ? `\n\nSpark: ${currentSparks[0]}` : ''
 
     let ideas: string[]
+    let source: ForgeSource = 'templates'
+
+    const llmEndpoint =
+      forgeProvider === 'grok' ? defaultsForProvider('grok').url : forgeUrl.trim()
+    const canLlm = forgeMode === 'llm' && llmEndpoint.length > 0
 
     try {
-      if (forgeMode === 'llm' && forgeUrl.trim()) {
+      if (canLlm) {
         setLlmLoading(true)
         setLlmStreamPreview('')
         try {
           const prompt = buildForgePrompt(selectedCluster, currentSparks, insights, customTopic || undefined)
-          const response = await callForgeLlm(forgeUrl.trim(), prompt, {
+          const response = await callForgeLlm(llmEndpoint, prompt, {
             stream: true,
             apiKey: forgeApiKey,
             model: forgeModel,
             onChunk: partial => setLlmStreamPreview(partial),
           })
           ideas = parseForgeResponse(response)
-          toast.success('LLM forged content', { description: ideas[0]?.slice(0, 75) + '...' })
+          source = 'llm'
+          toast.success(
+            forgeProvider === 'grok' ? 'Grok forged content' : 'LLM forged content',
+            { description: ideas[0]?.slice(0, 75) + '...' },
+          )
         } catch (err) {
           ideas = forgeContent(selectedCluster, customTopic || undefined)
+          source = 'llm-fallback'
           const formatted = formatForgeLlmError(err)
           toast.error(formatted.title, { description: formatted.description, duration: 8000 })
         } finally {
@@ -303,16 +369,84 @@ function App() {
         }
       } else {
         ideas = forgeContent(selectedCluster, customTopic || undefined)
+        source = 'templates'
         toast.success('Content forged', { description: ideas[0].slice(0, 75) + '...' })
       }
 
+      commitForgeResult(ideas, source)
       navigator.clipboard?.writeText(ideas.join('\n\n') + sparkNote).catch(() => {})
       setForgedFlash(true)
       window.setTimeout(() => setForgedFlash(false), 900)
     } finally {
       forgeInFlightRef.current = false
     }
-  }, [selectedCluster, customTopic, forgeMode, forgeUrl, forgeApiKey, forgeModel, insights])
+  }, [
+    selectedCluster,
+    customTopic,
+    forgeMode,
+    forgeProvider,
+    forgeUrl,
+    forgeApiKey,
+    forgeModel,
+    insights,
+    commitForgeResult,
+  ])
+
+  const handlePreference = useCallback(
+    (decision: 'accept' | 'edit' | 'reject') => {
+      if (!lastForge) {
+        toast.info('Forge first, then gate the result')
+        return
+      }
+      if (decision === 'edit') {
+        const revised = window.prompt(
+          'Edit angles (one per line). Saves preference for the learn loop.',
+          lastForge.angles.join('\n'),
+        )
+        if (revised == null) return
+        const editedAngles = revised
+          .split('\n')
+          .map(l => l.replace(/^\s*\d+[.)]\s*/, '').trim())
+          .filter(Boolean)
+        if (editedAngles.length === 0) {
+          toast.error('No angles kept')
+          return
+        }
+        appendPreference({
+          decision: 'edit',
+          topic: lastForge.topic,
+          angles: lastForge.angles,
+          editedAngles,
+          clusterName: lastForge.clusterName,
+          source: lastForge.source,
+          model: lastForge.model,
+          provider: lastForge.provider,
+        })
+        const next: LastForgeResult = {
+          ...lastForge,
+          angles: editedAngles,
+          createdAt: new Date().toISOString(),
+        }
+        setLastForge(next)
+        saveLastForge(next)
+        toast.success('Edited angles saved', { description: 'Preference logged · export updated' })
+        return
+      }
+      appendPreference({
+        decision,
+        topic: lastForge.topic,
+        angles: lastForge.angles,
+        clusterName: lastForge.clusterName,
+        source: lastForge.source,
+        model: lastForge.model,
+        provider: lastForge.provider,
+      })
+      toast.success(decision === 'accept' ? 'Accepted for learn loop' : 'Rejected for learn loop', {
+        description: 'Stored locally — never auto-posts',
+      })
+    },
+    [lastForge],
+  )
 
   const copyForgePrompt = useCallback(() => {
     const currentSparks = selectedCluster
@@ -632,13 +766,16 @@ Tags: trendforge,signals,forge`).catch(() => {})
               sparks={sparks}
               forgedFlash={forgedFlash}
               forgeMode={forgeMode}
+              forgeProvider={forgeProvider}
               forgeUrl={forgeUrl}
               forgeApiKey={forgeApiKey}
               forgeModel={forgeModel}
               llmLoading={llmLoading}
               llmStreamPreview={llmStreamPreview}
+              lastForge={lastForge}
               onCustomTopicChange={setCustomTopic}
               onForgeModeChange={setForgeMode}
+              onForgeProviderChange={handleForgeProviderChange}
               onForgeUrlChange={setForgeUrl}
               onForgeApiKeyChange={setForgeApiKey}
               onForgeModelChange={setForgeModel}
@@ -646,6 +783,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
               onCopyForgePrompt={copyForgePrompt}
               onAnalyzeWithGrok={analyzeWithGrok}
               onCopySparks={copySparks}
+              onPreference={handlePreference}
             />
           </motion.div>
 

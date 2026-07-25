@@ -1,5 +1,6 @@
 import { forgeContent } from './narrative'
 import { generateSparks } from './insights'
+import type { ForgeSource } from './preferences'
 import type { Cluster, Insight, SavedRadar, XPost } from './types'
 
 export interface ExportContext {
@@ -9,6 +10,18 @@ export interface ExportContext {
   clusters: Cluster[]
   insights: Insight[]
   radars: SavedRadar[]
+  /** Last durable forge output — preferred over regenerating templates. */
+  forgedAngles?: string[] | null
+  forgeSource?: ForgeSource | null
+  forgeModel?: string | null
+  forgeProvider?: string | null
+}
+
+function resolveForgedAngles(ctx: ExportContext): string[] {
+  if (ctx.forgedAngles && ctx.forgedAngles.length > 0) {
+    return ctx.forgedAngles
+  }
+  return forgeContent(ctx.selectedCluster, ctx.customTopic || undefined)
 }
 
 function topicSlug(topic: string): string {
@@ -30,7 +43,10 @@ export function buildThreadMarkdown(ctx: ExportContext): string {
   const vol = cluster?.volume || ctx.posts.length
   const sent = cluster ? cluster.avgSentiment.toFixed(2) : '0.00'
   const shift = cluster ? cluster.shift.toFixed(2) : '0.00'
-  const ideas = forgeContent(cluster, ctx.customTopic || undefined)
+  const ideas = resolveForgedAngles(ctx)
+  const forgeNote = ctx.forgeSource
+    ? `**Forge:** ${ctx.forgeSource}${ctx.forgeProvider ? ` · ${ctx.forgeProvider}` : ''}${ctx.forgeModel ? ` · ${ctx.forgeModel}` : ''}`
+    : '**Forge:** templates (no durable forge yet — ran template fallback)'
   const sparks = cluster
     ? generateSparks({ name: cluster.name, category: cluster.name })
     : []
@@ -40,6 +56,7 @@ export function buildThreadMarkdown(ctx: ExportContext): string {
 **Generated:** ${new Date().toISOString()}
 **Cluster volume:** ${vol} | **Avg sentiment:** ${sent} | **Shift:** ${shift}
 **Source:** TrendForge real-time X radar
+${forgeNote}
 
 ## Key Signals
 ${cluster?.posts.slice(0, 3).map(p => `- ${p.text} (@${p.username})`).join('\n') || '- Live feed analysis'}
@@ -54,14 +71,14 @@ ${sparks.map(s => `- ${s}`).join('\n') || '- Run a 48h micro-experiment'}
 ${ctx.insights[0]?.action || 'Ship the contrarian or gap angle now.'}
 
 ---
-Exported from TrendForge. Pair with ForgeRouter for private LLM refinement.
+Exported from TrendForge. Human-gated: review before posting. Optional: Grok via xAI or local ForgeRouter.
 `
 }
 
 export function buildMetaJson(ctx: ExportContext): Record<string, unknown> {
   const topic = resolveTopic(ctx)
   const cluster = ctx.selectedCluster
-  const ideas = forgeContent(cluster, ctx.customTopic || undefined)
+  const ideas = resolveForgedAngles(ctx)
   const sparks = cluster
     ? generateSparks({ name: cluster.name, category: cluster.name })
     : []
@@ -72,6 +89,9 @@ export function buildMetaJson(ctx: ExportContext): Record<string, unknown> {
     sentiment: cluster ? cluster.avgSentiment.toFixed(2) : '0.00',
     shift: cluster ? cluster.shift.toFixed(2) : '0.00',
     forged: ideas,
+    forgeSource: ctx.forgeSource ?? (ctx.forgedAngles?.length ? 'unknown' : 'templates'),
+    forgeProvider: ctx.forgeProvider ?? null,
+    forgeModel: ctx.forgeModel ?? null,
     sparks,
     timestamp: new Date().toISOString(),
     radars: ctx.radars.map(r => ({

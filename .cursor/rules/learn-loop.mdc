@@ -1,0 +1,12 @@
+---
+description: Accept/Edit/Reject preferences and last-forge durability
+globs: src/lib/preferences.ts,src/lib/export.ts,src/App.tsx,src/components/ForgePanel.tsx
+alwaysApply: false
+---
+
+# Learn loop (G3 scaffold)
+
+- Store Accept / Edit / Reject as local preference events (`src/lib/preferences.ts`) — no server yet
+- Last forge must stay durable in UI and feed export when present
+- Do not invent engagement metrics or claim outcomes from preferences
+- Keep preference helpers pure and covered by tests (`preferences.test.ts`, `export.test.ts`)

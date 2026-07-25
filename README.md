@@ -34,7 +34,8 @@ npm run dev
 - `X_BEARER_TOKEN=your_token npx vercel dev` (or set in Vercel env + deploy).
 - See "Real X Setup" below.
 
-**Local LLM generation option:** Use ForgeRouter as backend (copy prompts or integrate later).
+**Grok generation (recommended):** Content forge → **LLM** → **Grok** preset. Set `XAI_API_KEY` (server-only via `/api/forge-chat`).  
+**Local LLM option:** LLM → **Local** (Ollama / ForgeRouter) or **Custom** OpenAI-compatible URL.
 
 ## Features
 
@@ -88,10 +89,23 @@ MCP / xurl notes in original for advanced auth.
 - Sparks & forge logic: pure functions in `src/lib/insights.ts` (importable elsewhere).
 - Future: extend `src/config.json` for queries, poll interval, export dir.
 
+## Intelligence paths
+
+| Path | How | Secret |
+|------|-----|--------|
+| **Templates** | Always works offline | none |
+| **Grok (xAI)** | LLM → Grok preset → `POST /api/forge-chat` | `XAI_API_KEY` (Vercel / vercel dev) |
+| **Local** | LLM → Local → Ollama `:11434` or ForgeRouter `:8123` | none (local) |
+| **Custom** | Any OpenAI-compatible base URL | optional session API key |
+
+Forged angles **persist in the UI** and land in MD/JSON export. Accept / Edit / Reject feeds a local learn loop (preferences in localStorage — never auto-posts).
+
+See `GOALS.md` + `AGENTS.md` for ship bar, loops, and Grok operator rules.
+
 ## Local Hardware & Models
 
 - Runs great on M1/M-series (Vite dev is light).
-- For private angle generation: run ForgeRouter (`forgerouter serve`) and feed forged prompts to it (or copy outputs).
+- For private angle generation: run ForgeRouter (`forgerouter serve`) and select **Local** in the forge panel.
 - Recommended local models via ForgeRouter: Qwen3-8B-4bit, Gemma-7B-4bit, Phi-4-mini (see ForgeRouter README).
 - No GPU required for the dashboard itself.
 

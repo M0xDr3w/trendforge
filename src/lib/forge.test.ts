@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildForgePrompt,
+  defaultsForProvider,
   ForgeLlmError,
   ForgeParseError,
   formatForgeLlmError,
+  GROK_DEFAULT_MODEL,
+  GROK_PROXY_PATH,
   parseForgeResponse,
   resolveChatCompletionsUrl,
 } from './forge'
@@ -81,9 +84,23 @@ describe('resolveChatCompletionsUrl', () => {
     )
   })
 
+  it('passes through same-origin Grok proxy path', () => {
+    expect(resolveChatCompletionsUrl(GROK_PROXY_PATH)).toBe(GROK_PROXY_PATH)
+    expect(resolveChatCompletionsUrl('/api/forge-chat')).toBe('/api/forge-chat')
+  })
+
   it('throws on empty or invalid URLs', () => {
     expect(() => resolveChatCompletionsUrl('')).toThrow(ForgeLlmError)
     expect(() => resolveChatCompletionsUrl('not-a-url')).toThrow(ForgeLlmError)
+  })
+})
+
+describe('defaultsForProvider', () => {
+  it('uses Grok proxy + grok-4.5 for grok provider', () => {
+    expect(defaultsForProvider('grok')).toEqual({
+      url: GROK_PROXY_PATH,
+      model: GROK_DEFAULT_MODEL,
+    })
   })
 })
 
