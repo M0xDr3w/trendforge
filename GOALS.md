@@ -15,7 +15,7 @@ A human sets a goal; Grok proposes a plan and loop; tools gather X signal; asser
 | G0 | Onboard us — shared model, ship bar, secrets | active |
 | G1 | Shippable TrendForge v0.1 | in progress |
 | G2 | SpaceXAI Gateway v0 | planned |
-| G3 | Learn loop (preferences → recipes) | scaffolded |
+| G3 | Learn loop (preferences → recipes) | in progress — Accept/Edit/Reject feed next LLM forge prompt |
 | G4 | Build-in-public loop | ongoing |
 
 ## Ship bar (G1)

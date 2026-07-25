@@ -5,8 +5,10 @@ import {
   loadPreferences,
   preferencesToJsonl,
   saveLastForge,
+  summarizePreferencesForPrompt,
   LAST_FORGE_STORAGE_KEY,
   PREFERENCES_STORAGE_KEY,
+  type PreferenceEvent,
 } from './preferences'
 
 class MemoryStorage {
@@ -82,5 +84,72 @@ describe('preferences', () => {
     expect(lines).toHaveLength(1)
     expect(JSON.parse(lines[0]).editedAngles).toEqual(['new'])
     expect(localStorage.getItem(PREFERENCES_STORAGE_KEY)).toBeTruthy()
+  })
+})
+
+describe('summarizePreferencesForPrompt', () => {
+  it('returns empty for no events', () => {
+    expect(summarizePreferencesForPrompt([])).toBe('')
+  })
+
+  it('includes prefer / avoid / edit language from a mix of decisions', () => {
+    const events: PreferenceEvent[] = [
+      {
+        id: '1',
+        timestamp: '2026-07-25T00:00:00.000Z',
+        decision: 'accept',
+        topic: 'AI Agents',
+        angles: ['Ship a narrow agent that does one job well'],
+        source: 'llm',
+      },
+      {
+        id: '2',
+        timestamp: '2026-07-25T00:01:00.000Z',
+        decision: 'reject',
+        topic: 'AI Agents',
+        angles: ['This will go viral overnight guaranteed'],
+        source: 'llm',
+      },
+      {
+        id: '3',
+        timestamp: '2026-07-25T00:02:00.000Z',
+        decision: 'edit',
+        topic: 'Local models',
+        angles: ['Edge is dead'],
+        editedAngles: ['Edge is maturing — here is the practical play'],
+        source: 'llm',
+      },
+    ]
+    const hint = summarizePreferencesForPrompt(events)
+    expect(hint).toContain('Operator taste')
+    expect(hint).toContain('Prefer angles like')
+    expect(hint).toContain('narrow agent')
+    expect(hint).toContain('Avoid angles like')
+    expect(hint).toContain('viral overnight')
+    expect(hint).toContain('Human edits')
+    expect(hint).toContain('maturing')
+  })
+
+  it('respects maxChars budget', () => {
+    const events: PreferenceEvent[] = [
+      {
+        id: '1',
+        timestamp: 't',
+        decision: 'accept',
+        topic: 't',
+        angles: ['A'.repeat(200)],
+        source: 'templates',
+      },
+      {
+        id: '2',
+        timestamp: 't',
+        decision: 'reject',
+        topic: 't',
+        angles: ['B'.repeat(200)],
+        source: 'templates',
+      },
+    ]
+    const hint = summarizePreferencesForPrompt(events, 120)
+    expect(hint.length).toBeLessThanOrEqual(120)
   })
 })

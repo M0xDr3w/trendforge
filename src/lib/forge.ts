@@ -209,6 +209,7 @@ export function buildForgePrompt(
   sparks: string[],
   insights: Insight[],
   customTopic?: string,
+  options?: { preferenceHint?: string },
 ): string {
   const topic = customTopic || cluster?.name || 'emerging trend'
   const samplePosts =
@@ -225,6 +226,10 @@ export function buildForgePrompt(
           ? 'Volume is cooling — lean into post-mortems, lessons, and contrarian takes.'
           : 'Volume is steady — lean into depth, nuance, and underserved gaps.'
 
+  const preferenceBlock = options?.preferenceHint?.trim()
+    ? `\n${options.preferenceHint.trim()}\n`
+    : ''
+
   return `Generate exactly 5 unique content angles for "${topic}".
 
 Cluster stats:
@@ -235,7 +240,7 @@ ${shiftHint ? `- Signal: ${shiftHint}\n` : ''}
 Sample posts:
 ${samplePosts}
 
-${sparks.length > 0 ? `Sparks (optional fuel):\n${sparks.map(s => `- ${s}`).join('\n')}\n` : ''}${insights.length > 0 ? `Insights:\n${insights.slice(0, 3).map(i => `- ${i.title}: ${i.action}`).join('\n')}\n` : ''}
+${sparks.length > 0 ? `Sparks (optional fuel):\n${sparks.map(s => `- ${s}`).join('\n')}\n` : ''}${insights.length > 0 ? `Insights:\n${insights.slice(0, 3).map(i => `- ${i.title}: ${i.action}`).join('\n')}\n` : ''}${preferenceBlock}
 Format (strict):
 1. <angle>
 2. <angle>

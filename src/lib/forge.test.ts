@@ -49,6 +49,21 @@ describe('buildForgePrompt', () => {
     const prompt = buildForgePrompt(sampleCluster, [], [], 'Local models')
     expect(prompt).toContain('"Local models"')
   })
+
+  it('includes preference hint when provided', () => {
+    const prompt = buildForgePrompt(sampleCluster, [], [], undefined, {
+      preferenceHint: 'Operator taste:\nPrefer angles like: concrete demos',
+    })
+    expect(prompt).toContain('Operator taste')
+    expect(prompt).toContain('concrete demos')
+    expect(prompt).toContain('1. <angle>')
+  })
+
+  it('omits preference block when hint empty', () => {
+    const withEmpty = buildForgePrompt(sampleCluster, [], [], undefined, { preferenceHint: '  ' })
+    const without = buildForgePrompt(sampleCluster, [], [])
+    expect(withEmpty).toBe(without)
+  })
 })
 
 describe('parseForgeResponse', () => {

@@ -39,7 +39,9 @@ import {
 import {
   appendPreference,
   loadLastForge,
+  loadPreferences,
   saveLastForge,
+  summarizePreferencesForPrompt,
   type ForgeSource,
   type LastForgeResult,
 } from './lib/preferences'
@@ -97,6 +99,7 @@ function App() {
   const [forgeApiKey, setForgeApiKey] = useState(() => loadForgeApiKey())
   const [forgeModel, setForgeModel] = useState(() => loadForgeModel())
   const [lastForge, setLastForge] = useState<LastForgeResult | null>(() => loadLastForge())
+  const [preferenceCount, setPreferenceCount] = useState(() => loadPreferences().length)
   const [llmLoading, setLlmLoading] = useState(false)
   const [llmStreamPreview, setLlmStreamPreview] = useState('')
   const [alertsEnabled, setAlertsEnabled] = useState(() => loadAlertsEnabled())
@@ -345,7 +348,14 @@ function App() {
         setLlmLoading(true)
         setLlmStreamPreview('')
         try {
-          const prompt = buildForgePrompt(selectedCluster, currentSparks, insights, customTopic || undefined)
+          const preferenceHint = summarizePreferencesForPrompt(loadPreferences())
+          const prompt = buildForgePrompt(
+            selectedCluster,
+            currentSparks,
+            insights,
+            customTopic || undefined,
+            { preferenceHint },
+          )
           const response = await callForgeLlm(llmEndpoint, prompt, {
             stream: true,
             apiKey: forgeApiKey,
@@ -429,7 +439,10 @@ function App() {
         }
         setLastForge(next)
         saveLastForge(next)
-        toast.success('Edited angles saved', { description: 'Preference logged · export updated' })
+        setPreferenceCount(loadPreferences().length)
+        toast.success('Edited angles saved', {
+          description: 'Preference logged · next LLM forge uses your edit · export updated',
+        })
         return
       }
       appendPreference({
@@ -441,8 +454,9 @@ function App() {
         model: lastForge.model,
         provider: lastForge.provider,
       })
+      setPreferenceCount(loadPreferences().length)
       toast.success(decision === 'accept' ? 'Accepted for learn loop' : 'Rejected for learn loop', {
-        description: 'Stored locally — never auto-posts',
+        description: 'Stored locally — next LLM forge uses this taste · never auto-posts',
       })
     },
     [lastForge],
@@ -452,9 +466,18 @@ function App() {
     const currentSparks = selectedCluster
       ? generateSparks({ name: selectedCluster.name, category: selectedCluster.name })
       : []
-    const prompt = buildForgePrompt(selectedCluster, currentSparks, insights, customTopic || undefined)
+    const preferenceHint = summarizePreferencesForPrompt(loadPreferences())
+    const prompt = buildForgePrompt(
+      selectedCluster,
+      currentSparks,
+      insights,
+      customTopic || undefined,
+      { preferenceHint },
+    )
     navigator.clipboard?.writeText(prompt).catch(() => {})
-    toast.success('Forge prompt copied')
+    toast.success(
+      preferenceHint ? 'Forge prompt copied (includes learn-loop taste)' : 'Forge prompt copied',
+    )
   }, [selectedCluster, customTopic, insights])
 
   const analyzeWithGrok = () => {
@@ -773,6 +796,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
               llmLoading={llmLoading}
               llmStreamPreview={llmStreamPreview}
               lastForge={lastForge}
+              preferenceCount={preferenceCount}
               onCustomTopicChange={setCustomTopic}
               onForgeModeChange={setForgeMode}
               onForgeProviderChange={handleForgeProviderChange}
