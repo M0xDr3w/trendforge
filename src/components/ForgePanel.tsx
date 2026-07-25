@@ -18,6 +18,8 @@ interface ForgePanelProps {
   llmLoading: boolean
   llmStreamPreview: string
   lastForge: LastForgeResult | null
+  /** Recent Accept/Edit/Reject events that will influence the next LLM forge. */
+  preferenceCount?: number
   onCustomTopicChange: (value: string) => void
   onForgeModeChange: (mode: ForgeMode) => void
   onForgeProviderChange: (provider: ForgeProvider) => void
@@ -44,6 +46,7 @@ export function ForgePanel({
   llmLoading,
   llmStreamPreview,
   lastForge,
+  preferenceCount = 0,
   onCustomTopicChange,
   onForgeModeChange,
   onForgeProviderChange,
@@ -309,6 +312,9 @@ export function ForgePanel({
           </div>
           <p className="mt-2 text-[10px] leading-snug text-[var(--muted)]">
             Preferences stay local (learn loop). Export downloads these durable angles.
+            {preferenceCount > 0
+              ? ` · ${preferenceCount} preference${preferenceCount === 1 ? '' : 's'} influence the next LLM forge.`
+              : ' · Gate angles so the next LLM forge learns your taste.'}
           </p>
         </>
       )}
