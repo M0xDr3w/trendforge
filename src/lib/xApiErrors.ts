@@ -3,6 +3,8 @@ import { toast } from 'sonner'
 export type XApiErrorCode =
   | 'token_missing'
   | 'credits_depleted'
+  | 'spend_cap'
+  | 'spend_store_missing'
   | 'invalid_max_results'
   | 'rate_limit'
   | 'unauthorized'
@@ -45,6 +47,14 @@ const ERROR_MAP: Record<XApiErrorCode, { message: string; hint: string }> = {
   invalid_max_results: {
     message: 'Invalid search request',
     hint: 'max_results must be between 1 and 100. Values below 10 fetch 10 from X and slice the response.',
+  },
+  spend_cap: {
+    message: 'Monthly X budget cap reached',
+    hint: 'Wait until next calendar month or raise X_SPEND_CAP_USD in Vercel env.',
+  },
+  spend_store_missing: {
+    message: 'Monthly spend store not configured',
+    hint: 'Set KV_REST_API_URL and KV_REST_API_TOKEN in Vercel env to enforce X_SPEND_CAP_USD.',
   },
   rate_limit: {
     message: 'X API rate limit reached',
@@ -118,7 +128,14 @@ export function showXApiErrorToast(error: XApiError): void {
 }
 
 export function isFatalXApiError(code: XApiErrorCode): boolean {
-  return code === 'token_missing' || code === 'unauthorized' || code === 'forbidden' || code === 'credits_depleted'
+  return (
+    code === 'token_missing' ||
+    code === 'unauthorized' ||
+    code === 'forbidden' ||
+    code === 'credits_depleted' ||
+    code === 'spend_cap' ||
+    code === 'spend_store_missing'
+  )
 }
 
 export function getXApiRemediation(error: XApiError): { steps: string[]; link?: { label: string; href: string } } {
@@ -144,6 +161,23 @@ export function getXApiRemediation(error: XApiError): { steps: string[]; link?: 
     return {
       steps: ['Restore credits or upgrade your X Developer plan at developer.x.com → Billing.'],
       link: { label: 'X Billing', href: 'https://developer.x.com/en/portal/products' },
+    }
+  }
+  if (error.code === 'spend_cap') {
+    return {
+      steps: [
+        'Wait until the next calendar month when spend counters reset.',
+        'Or raise X_SPEND_CAP_USD (e.g. 25) in Vercel → Environment Variables, then redeploy.',
+      ],
+    }
+  }
+  if (error.code === 'spend_store_missing') {
+    return {
+      steps: [
+        'Provision Vercel KV (or Upstash Redis) in your Vercel project.',
+        'Add KV_REST_API_URL and KV_REST_API_TOKEN in Vercel env (Production + Preview).',
+        'Optionally set X_SPEND_CAP_USD (default 20). Redeploy.',
+      ],
     }
   }
   return { steps: [error.hint] }
