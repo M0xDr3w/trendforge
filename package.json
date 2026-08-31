@@ -16,6 +16,7 @@
     "deploy:prod": "npm run build && npx vercel pull --yes --environment=production && npx vercel build --prod && npx vercel deploy --prebuilt --prod --no-wait"
   },
   "dependencies": {
+    "@vercel/kv": "^3.0.0",
     "framer-motion": "^12.42.0",
     "lucide-react": "^1.21.0",
     "react": "^19.2.7",

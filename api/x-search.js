@@ -1,8 +1,25 @@
 // Vercel serverless function to proxy X API calls securely
 // Set X_BEARER_TOKEN in Vercel env vars.
+// Enforces a monthly spend cap using Vercel KV when configured.
+
+import { kv } from '@vercel/kv'
 
 function sendError(res, status, code, error, hint) {
   return res.status(status).json({ error, code, hint })
+}
+
+function monthKey(base = 'xapi:spend_cents') {
+  const d = new Date()
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${base}:${yyyy}-${mm}`
+}
+
+function parseUsdEnv(name, fallbackNumber) {
+  const raw = process.env[name]
+  if (!raw) return fallbackNumber
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : fallbackNumber
 }
 
 function parseXApiError(httpStatus, bodyText) {
@@ -94,6 +111,39 @@ export default async function handler(req, res) {
     )
   }
 
+  // Hard monthly spend cap (default $20). Requires Vercel KV.
+  const capUsd = parseUsdEnv('X_SPEND_CAP_USD', 20)
+  const perPostUsd = parseUsdEnv('X_POST_COST_USD', 0.005) // ~ $0.005 per post read
+  const plannedPosts = mr
+  const plannedCents = Math.ceil(plannedPosts * perPostUsd * 100)
+  const capCents = Math.round(capUsd * 100)
+
+  // KV is required to enforce the cap in production.
+  const kvConfigured =
+    !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN
+
+  if (!kvConfigured) {
+    return sendError(
+      res,
+      500,
+      'spend_store_missing',
+      'Monthly spend store not configured',
+      'Set Vercel KV env (KV_REST_API_URL, KV_REST_API_TOKEN) to enforce X_SPEND_CAP_USD.',
+    )
+  }
+
+  const key = monthKey()
+  const currentCents = Number((await kv.get(key)) || 0) || 0
+  if (currentCents + plannedCents > capCents) {
+    return sendError(
+      res,
+      402,
+      'spend_cap',
+      'Monthly X budget cap reached',
+      `Cap ${capUsd.toFixed(2)} USD reached for ${key.split(':')[1]}. Wait until next month or raise X_SPEND_CAP_USD.`,
+    )
+  }
+
   try {
     const url = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=${mr}&tweet.fields=public_metrics,created_at,author_id,conversation_id&expansions=author_id&user.fields=username`
 
@@ -108,6 +158,17 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json()
+
+    // Spend accounting based on actual posts returned (best-effort).
+    const actualCount = Array.isArray(data?.data) ? data.data.length : 0
+    if (actualCount > 0) {
+      const actualCents = Math.ceil(actualCount * perPostUsd * 100)
+      try {
+        await kv.incrby(key, actualCents)
+      } catch {
+        // Non-fatal: proceed, but future calls will still preflight against KV.
+      }
+    }
 
     const posts = (data.data || []).map((tweet, i) => {
       const user = (data.includes?.users || []).find(u => u.id === tweet.author_id) || {}

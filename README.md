@@ -75,6 +75,9 @@ Data flow stays in-browser for speed + privacy. Proxy keeps tokens server-side.
 4. Prod: `vercel env add X_BEARER_TOKEN` (Production + Preview) or Dashboard. Redeploy.
    - Project now uses `vercel.ts` (modern typed config, see below).
 5. In-app: **SYNC REAL X** or **LIVE REAL** toggle.
+6. Production budget cap (required): add the following env vars (names only):
+   - `KV_REST_API_URL`, `KV_REST_API_TOKEN` (Vercel KV / Upstash Redis)
+   - `X_SPEND_CAP_USD` (default 20)
 
 `/api/x-search` runs on Fluid Compute (full Node.js, instance reuse). Keep token server-side only.
 
