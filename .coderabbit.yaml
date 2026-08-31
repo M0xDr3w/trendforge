@@ -2,5 +2,7 @@
 reviews:
   auto_review:
     enabled: true
+    drafts: true
     base_branches:
+      - "main"
       - "review/.*"
