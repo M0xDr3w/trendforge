@@ -1,0 +1,17 @@
+{
+  "name": "TrendForge",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "npm run dev -- --host",
+      "description": "Vite dev server for the TrendForge dashboard. Serves the mock X feed on port 5173 with zero keys. For real X data or the Grok forge, run `npx vercel dev` with X_BEARER_TOKEN / XAI_API_KEY instead."
+    }
+  ],
+  "ports": [
+    {
+      "name": "vite",
+      "port": 5173
+    }
+  ]
+}
