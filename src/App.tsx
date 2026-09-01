@@ -504,6 +504,26 @@ ${summary}`
     toast.success('Sparks copied', { description: 'Use these as contrarian angles or experiments' })
   }
 
+  const copyAngles = () => {
+    if (!lastForge || lastForge.angles.length === 0) {
+      toast.info('Forge content first to copy angles')
+      return
+    }
+    navigator.clipboard?.writeText(lastForge.angles.join('\n\n')).catch(() => {})
+    toast.success('Angles copied', { description: lastForge.angles[0].slice(0, 75) + '...' })
+  }
+
+  const copyThread = () => {
+    if (!lastForge || lastForge.angles.length === 0) {
+      toast.info('Forge content first to copy thread')
+      return
+    }
+    // Plain-text thread: one angle per paragraph. Ready to paste into X/LinkedIn.
+    const thread = lastForge.angles.join('\n\n')
+    navigator.clipboard?.writeText(thread).catch(() => {})
+    toast.success('Thread copied', { description: lastForge.angles[0].slice(0, 75) + '...' })
+  }
+
   const exportState = () => {
     const data = {
       timestamp: new Date().toISOString(),
@@ -807,6 +827,8 @@ Tags: trendforge,signals,forge`).catch(() => {})
               onCopyForgePrompt={copyForgePrompt}
               onAnalyzeWithGrok={analyzeWithGrok}
               onCopySparks={copySparks}
+              onCopyAngles={copyAngles}
+              onCopyThread={copyThread}
               onPreference={handlePreference}
             />
           </motion.div>

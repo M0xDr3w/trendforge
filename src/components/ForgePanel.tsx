@@ -27,9 +27,12 @@ interface ForgePanelProps {
   onForgeApiKeyChange: (apiKey: string) => void
   onForgeModelChange: (model: string) => void
   onForge: () => void
+  /** Advanced: keep but demote prompt-copy */
   onCopyForgePrompt: () => void
   onAnalyzeWithGrok: () => void
   onCopySparks: () => void
+  onCopyAngles: () => void
+  onCopyThread: () => void
   onPreference: (decision: 'accept' | 'edit' | 'reject') => void
 }
 
@@ -57,6 +60,8 @@ export function ForgePanel({
   onCopyForgePrompt,
   onAnalyzeWithGrok,
   onCopySparks,
+  onCopyAngles,
+  onCopyThread,
   onPreference,
 }: ForgePanelProps) {
   const reduceMotion = useReducedMotion()
@@ -232,16 +237,6 @@ export function ForgePanel({
       )}
 
       <NeoButton
-        onClick={onCopyForgePrompt}
-        variant="ghost"
-        fullWidth
-        size="sm"
-        className="mt-2 flex"
-        aria-label="Copy LLM forge prompt to clipboard"
-      >
-        Copy forge prompt
-      </NeoButton>
-      <NeoButton
         onClick={onAnalyzeWithGrok}
         disabled={!selectedCluster}
         variant="ghost"
@@ -252,6 +247,17 @@ export function ForgePanel({
       >
         Ask Grok + X MCP
       </NeoButton>
+      <p className="mt-1 text-center text-[10px] text-[var(--muted)]">
+        Advanced:{' '}
+        <button
+          type="button"
+          onClick={onCopyForgePrompt}
+          className="underline underline-offset-2 hover:text-[var(--text)]"
+          aria-label="Copy LLM forge prompt to clipboard (advanced)"
+        >
+          copy forge prompt
+        </button>
+      </p>
       <div className="mt-2 text-center text-[10px] text-[var(--muted)]" aria-live="polite">
         {forgedFlash
           ? 'Forged — results kept for export · human gate below'
@@ -270,6 +276,20 @@ export function ForgePanel({
             {lastForge.provider ? ` · ${lastForge.provider}` : ''}
             {lastForge.model ? ` · ${lastForge.model}` : ''}
           </HudLabel>
+          <div className="mb-2 flex gap-1">
+            <NeoButton onClick={onCopyAngles} size="xs" className="flex-1" aria-label="Copy angles to clipboard">
+              Copy angles
+            </NeoButton>
+            <NeoButton
+              onClick={onCopyThread}
+              size="xs"
+              variant="accent"
+              className="flex-1"
+              aria-label="Copy thread to clipboard"
+            >
+              Copy thread
+            </NeoButton>
+          </div>
           <div className="mb-3 max-h-48 space-y-1.5 overflow-y-auto">
             {lastForge.angles.map((angle, i) => (
               <div
