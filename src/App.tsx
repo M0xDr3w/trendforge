@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { config } from './lib/config'
@@ -50,8 +50,7 @@ import { FeedPanel } from './components/FeedPanel'
 import { ClusterPanel } from './components/ClusterPanel'
 import { InsightsPanel } from './components/InsightsPanel'
 import { ForgePanel } from './components/ForgePanel'
-import { Panel } from './components/ui'
-import { MobileAnalyticsDrawer } from './components/MobileAnalyticsDrawer'
+// UI panels imported where needed in subcomponents
 import { MobileActionBar } from './components/MobileActionBar'
 import { XApiStatusBanner } from './components/XApiStatusBanner'
 import { pageVariants, sectionVariants, type ConnectionStatus } from './components/motion'
@@ -59,17 +58,7 @@ import type { XApiConnectionStatus, XApiError } from './lib/xApiErrors'
 import { isFatalXApiError, showXApiErrorToast } from './lib/xApiErrors'
 import type { XPost, Cluster, SavedRadar } from './lib/types'
 
-const VolumeChart = lazy(() =>
-  import('./components/VolumeChart').then(m => ({ default: m.VolumeChart })),
-)
-
-function ChartSectionFallback({ label }: { label: string }) {
-  return (
-    <Panel padding="md" className="flex h-48 items-center justify-center text-xs text-[var(--muted)]">
-      Loading {label}…
-    </Panel>
-  )
-}
+// Volume chart and analytics removed for MVP freeze
 
 function App() {
   const [posts, setPosts] = useState<XPost[]>(() => {
@@ -687,13 +676,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
     setPosts(p => [generateMockPost(Date.now()), ...p].slice(0, config.maxPosts))
   }
 
-  const chartData = history.slice(-7).map((vols, idx) => {
-    const entry: Record<string, number> = { t: idx }
-    Object.keys(vols).forEach(k => { entry[k] = vols[k] })
-    return entry
-  })
-
-  const topClusters = clusters.slice(0, 5)
+  const topClusters = clusters.slice(0, 1)
   const filteredPosts = posts.filter(
     p =>
       !feedSearch ||
@@ -714,7 +697,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
         <motion.div variants={sectionVariants}>
           <Header
             postCount={posts.length}
-            clusterCount={clusters.length}
+            clusterCount={topClusters.length}
             connectionStatus={connectionStatus}
             xApiStatus={xApiStatus}
             isRunning={isRunning}
@@ -773,15 +756,6 @@ Tags: trendforge,signals,forge`).catch(() => {})
           </motion.div>
 
           <motion.div className="space-y-4 lg:col-span-3" variants={sectionVariants}>
-            <MobileAnalyticsDrawer
-              posts={posts}
-              clusters={clusters}
-              onSyncReal={syncReal}
-              onSelectCluster={(name) => {
-                const match = clusters.find(c => c.name === name)
-                if (match) setSelectedCluster(match)
-              }}
-            />
             <InsightsPanel insights={insights} postCount={posts.length} />
             <ForgePanel
               selectedCluster={selectedCluster}
@@ -811,11 +785,7 @@ Tags: trendforge,signals,forge`).catch(() => {})
             />
           </motion.div>
 
-          <motion.div className="mt-2 lg:col-span-12" variants={sectionVariants}>
-            <Suspense fallback={<ChartSectionFallback label="volume chart" />}>
-              <VolumeChart chartData={chartData} />
-            </Suspense>
-          </motion.div>
+          {/* Volume chart removed for MVP freeze */}
         </div>
       </motion.div>
 

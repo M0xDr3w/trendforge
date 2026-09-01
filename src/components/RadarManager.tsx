@@ -25,6 +25,7 @@ export function RadarManager({
   onSync,
   onSyncAll,
 }: RadarManagerProps) {
+  const singleMode = maxRadars <= 1
   const [expanded, setExpanded] = useState(false)
   const [name, setName] = useState('')
   const [query, setQuery] = useState('')
@@ -51,22 +52,24 @@ export function RadarManager({
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Radio size={14} className="text-[var(--cyan)]" aria-hidden />
-          <HudLabel className="text-xs tracking-[0.15em]">Saved radars</HudLabel>
+          <HudLabel className="text-xs tracking-[0.15em]">{singleMode ? 'Radar' : 'Saved radars'}</HudLabel>
         </div>
-        <div className="flex items-center gap-2">
-          <NeoButton
-            size="xs"
-            variant="ghost"
-            onClick={onSyncAll}
-            disabled={syncingId !== null || radars.length === 0}
-            aria-label="Sync all saved radars"
-          >
-            Sync all
-          </NeoButton>
-          <span className="text-xs text-[var(--muted)]">
-            {radars.length}/{maxRadars}
-          </span>
-        </div>
+        {!singleMode && (
+          <div className="flex items-center gap-2">
+            <NeoButton
+              size="xs"
+              variant="ghost"
+              onClick={onSyncAll}
+              disabled={syncingId !== null || radars.length === 0}
+              aria-label="Sync all saved radars"
+            >
+              Sync all
+            </NeoButton>
+            <span className="text-xs text-[var(--muted)]">
+              {radars.length}/{maxRadars}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -94,15 +97,17 @@ export function RadarManager({
                   >
                     {syncing ? <Loader2 size={12} className="animate-spin" aria-hidden /> : 'Sync'}
                   </NeoButton>
-                  <NeoButton
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => onDelete(radar.id)}
-                    disabled={syncingId !== null}
-                    aria-label={`Delete radar ${radar.name}`}
-                  >
-                    <Trash2 size={12} aria-hidden />
-                  </NeoButton>
+                  {!singleMode && (
+                    <NeoButton
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => onDelete(radar.id)}
+                      disabled={syncingId !== null}
+                      aria-label={`Delete radar ${radar.name}`}
+                    >
+                      <Trash2 size={12} aria-hidden />
+                    </NeoButton>
+                  )}
                 </div>
               </div>
             </Panel>
@@ -110,7 +115,7 @@ export function RadarManager({
         })}
       </div>
 
-      {!atLimit && unusedDefaults.length > 0 && (
+      {!singleMode && !atLimit && unusedDefaults.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1.5">
           {unusedDefaults.slice(0, 3).map(dq => (
             <NeoButton
@@ -128,7 +133,7 @@ export function RadarManager({
         </div>
       )}
 
-      {expanded ? (
+      {!singleMode && expanded ? (
         <Panel padding="sm" className="mt-2 space-y-2">
           <FieldInput
             value={name}
@@ -151,7 +156,7 @@ export function RadarManager({
             </NeoButton>
           </div>
         </Panel>
-      ) : (
+      ) : !singleMode ? (
         <NeoButton
           size="xs"
           className="mt-2"
@@ -161,9 +166,9 @@ export function RadarManager({
         >
           <Plus size={14} aria-hidden /> Add radar
         </NeoButton>
-      )}
+      ) : null}
 
-      {atLimit && (
+      {!singleMode && atLimit && (
         <p className="mt-1 text-center text-[10px] text-[var(--muted)]">Delete a radar to add another</p>
       )}
     </div>
