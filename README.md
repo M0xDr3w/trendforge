@@ -1,181 +1,143 @@
 # TrendForge
 
-**Real-Time X Trend Radar + Content Forge**  
-Escape the "Sea of Sameness". Detect emerging narratives, gaps, and shifts on X in real time. Forge unique, timely angles, threads, and sparks you can ship immediately.
+**Real-time X trend radar + content forge.** Detect emerging narratives, gaps, and sentiment shifts on X, then forge original, timely angles, threads, and sparks you can ship — without drowning in the "sea of sameness".
 
-**Production:** https://trendforge-opal.vercel.app
+**Live:** https://trendforge-opal.vercel.app
 
-**Target users:** Indie creators, researchers, builders who want signal over noise and original content fast. Local-first friendly (pair with ForgeRouter for private generation).
+TrendForge ingests X posts (mock or real), clusters them into conversation buckets, surfaces volume/sentiment/velocity signals and content gaps, and helps you draft platform-ready copy. It runs happily with **zero keys** on a simulated feed, and upgrades to real X data and LLM-assisted drafting when you configure server-side secrets.
 
-## Value Proposition (30 seconds)
-- Pull live (or simulated) X posts.
-- Cluster by real conversation buckets.
-- Spot volume spikes, sentiment flips, and "what's missing".
-- One-click generate platform-ready hooks, threads, LinkedIn posts, contrarian takes.
-- Export clean Markdown threads + JSON + timestamped artifacts.
+---
 
-Built for speed on your M-series Mac. Real X data via secure proxy or local bearer. Beautiful dark HUD UI.
+## Run locally (no keys required)
 
-## Quickstart (< 3 minutes to first useful result)
+The default experience is fully local and keyless — it ingests a simulated X feed so you can explore clustering, insights, and the forge in under three minutes.
 
 ```bash
-cd projects/trendforge
+git clone https://github.com/M0xDr3w/trendforge.git
+cd trendforge
 npm install
 npm run dev
 ```
 
-1. Open the local URL.
-2. The feed auto-ingests simulated posts (or click **SYNC REAL X** / toggle **LIVE REAL**).
-3. Watch clusters form → click a cluster → **Forge Content** or **Sparks**.
-4. Copy a thread or export.
+Open the printed local URL (default http://localhost:5173). The feed auto-ingests mock posts. Click a cluster → **Forge** to generate angles, then copy or export. No X or LLM credentials are needed for this path — template-based forging works entirely offline.
 
-**First real data (recommended):**
-- Get X Bearer Token (app-only) from developer.x.com.
-- `X_BEARER_TOKEN=your_token npx vercel dev` (or set in Vercel env + deploy).
-- See "Real X Setup" below.
+### Verify
 
-**Grok generation (recommended):** Content forge → **LLM** → **Grok** preset. Set `XAI_API_KEY` (server-only via `/api/forge-chat`).  
-**Local LLM option:** LLM → **Local** (Ollama / ForgeRouter) or **Custom** OpenAI-compatible URL.
-
-## Features
-
-- **Live / Real X Feed**: Mock + production-grade recent search via `/api/x-search` proxy (rate-limit aware).
-- **Smart Keyword Clustering**: Predefined high-signal buckets (AI Agents, X & Grok, Local/Embeddings, Consumer, Content & Trends, DevTools). Remaining → "Other".
-- **Narrative Intelligence**: Volume deltas, sentiment averages, shift/gap/opportunity detection.
-- **Content Forge + Sparks**: Ready-to-adapt hooks, threads, contrarian angles, micro-experiments. Pure helpers in `src/lib/insights.ts`.
-- **Visuals**: Recharts volume timeline. Cluster cards with metrics.
-- **Actions**: Inject custom post, reset, export, persist (local).
-- **Multiple Outputs**: In-app copy + planned folder/JSON/MD export (see improvements).
-- **Real-time modes**: LIVE REAL toggle (polls conservatively).
-
-## Architecture (Mermaid)
-
-```mermaid
-flowchart TD
-    A[Mock Feed or Real X Proxy<br/>/api/x-search] --> B[Post Store + Merge]
-    B --> C[Keyword Bucketing<br/>KEYWORD_BUCKETS]
-    C --> D[Cluster Compute<br/>volume, avgSentiment, shift]
-    D --> E[Insight Engine<br/>detectInsights + generateSparks]
-    E --> F[Content Forge<br/>forgeContent templates]
-    F --> G[UI: Clusters + Timeline + Forge Panel]
-    G --> H[Export / MakerLog / Copy]
-    subgraph "Local Efficiency"
-      I[Optional: ForgeRouter / local LLM<br/>for advanced angle gen]
-    end
-    F -.-> I
+```bash
+npm run lint    # oxlint
+npm run test    # vitest
+npm run build   # tsc + vite production build
 ```
 
-Data flow stays in-browser for speed + privacy. Proxy keeps tokens server-side.
+---
 
-## Real X Setup (Bearer Token) – Updated per 2026 Vercel best practices
+## Stack
 
-1. Create X app at https://developer.x.com (Read access, OAuth 2.0).
-2. Copy **Bearer Token** (App-only recommended for search/recent).
-3. Local (Fluid Compute): `X_BEARER_TOKEN=xxx npx vercel dev`
-4. Prod: `vercel env add X_BEARER_TOKEN` (Production + Preview) or Dashboard. Redeploy.
-   - Project now uses `vercel.ts` (modern typed config, see below).
-5. In-app: **SYNC REAL X** or **LIVE REAL** toggle.
-6. Production budget cap (required): add the following env vars (names only):
-   - `KV_REST_API_URL`, `KV_REST_API_TOKEN` (Vercel KV / Upstash Redis)
-   - `X_SPEND_CAP_USD` (default 20)
+- **Frontend:** React 19 + TypeScript, built with Vite
+- **Styling:** Tailwind CSS 4 (dark HUD UI), Framer Motion, Recharts, Lucide, Sonner
+- **Backend:** Vercel serverless functions (Node.js runtime)
+  - `api/x-search.js` — secure X recent-search proxy
+  - `api/forge-chat.js` — server-side xAI Grok proxy (OpenAI-compatible)
+- **Node:** 22.x
 
-`/api/x-search` runs on Fluid Compute (full Node.js, instance reuse). Keep token server-side only.
+Domain logic lives as pure, tested helpers in `src/lib/` (clustering, insights, forge templates, analytics, export). `App.tsx` stays as orchestration.
 
-Rate limits respected (polling ~45s in LIVE). See `api/x-search.js` for fields + sentiment heuristic.
+---
 
-MCP / xurl notes in original for advanced auth.
+## Real X data (Sync) — server-side, under a spend cap
 
-## Configuration & Extensibility
+The **SYNC REAL X** / **LIVE REAL** actions call the `/api/x-search` serverless proxy, which fetches from X's recent-search API. Real X data is opt-in and gated by a server-side budget:
 
-- Keyword buckets: edit `keywordBuckets` in `src/config.json`.
-- Mock seeds & generators: `SEED_POSTS`, `generateMockPost`.
-- Sparks & forge logic: pure functions in `src/lib/insights.ts` (importable elsewhere).
-- Future: extend `src/config.json` for queries, poll interval, export dir.
+- The X bearer token lives **only** in server env (`X_BEARER_TOKEN`), never in the client bundle.
+- The proxy enforces a **monthly spend cap** — `X_SPEND_CAP_USD` (default `$20`) — tracked in Vercel KV (`KV_REST_API_URL`, `KV_REST_API_TOKEN`). When the cap is reached, the proxy returns a structured `spend_cap` error and stops spending until the next month or until you raise the cap. Without KV configured, the cap cannot be enforced and real-search is refused (`spend_store_missing`), so you can't accidentally run uncapped.
+- Prefer an **App-only Bearer Token** (long-lived) for `X_BEARER_TOKEN`. OAuth 2.0 *user* tokens are short-lived and belong to local MCP/`xurl` flows, not this proxy.
 
-## Intelligence paths
+Local dev with real data:
+
+```bash
+X_BEARER_TOKEN=<app-only-bearer> npx vercel dev
+```
+
+Production: set `X_BEARER_TOKEN` (and the KV vars) in the Vercel dashboard → Environment Variables, then redeploy. See `.env.example` and `SETUP.md` for the full walkthrough. **Never commit tokens** — secrets stay in Vercel env only.
+
+---
+
+## Forge — human-gated, copy-paste, no auto-post
+
+The content forge is deliberately **human-in-the-loop**. TrendForge **never** posts to X automatically:
+
+- Forged hooks, threads, and angles are drafted for you to review, edit, and **copy** — publishing is always a manual paste by you.
+- Accept / Edit / Reject choices feed a local learn loop (preferences stored in `localStorage`) that tunes future drafts — they never trigger a post.
+- The last forge persists in the UI and flows into Markdown/JSON export.
+
+### Forge intelligence paths
 
 | Path | How | Secret |
 |------|-----|--------|
-| **Templates** | Always works offline | none |
-| **Grok (xAI)** | LLM → Grok preset → `POST /api/forge-chat` | `XAI_API_KEY` (Vercel / vercel dev) |
-| **Local** | LLM → Local → Ollama `:11434` or ForgeRouter `:8123` | none (local) |
-| **Custom** | Any OpenAI-compatible base URL | optional session API key |
+| **Templates** | Always available, fully offline | none |
+| **Grok (xAI)** | Forge → Grok preset → `POST /api/forge-chat` | `XAI_API_KEY` (server env / `vercel dev`) |
+| **Local** | Forge → Local → Ollama (`:11434`) or ForgeRouter (`:8123`) | none (local) |
+| **Custom** | Any OpenAI-compatible base URL | optional session key (sessionStorage only) |
 
-Forged angles **persist in the UI** and land in MD/JSON export. Accept / Edit / Reject feeds a local learn loop (preferences in localStorage — never auto-posts).
+`XAI_API_KEY` is read server-side by `/api/forge-chat` and never ships in the client bundle. An optional UI-pasted key is kept in `sessionStorage` only. If an LLM call fails, the forge falls back to templates.
 
-See `GOALS.md` + `AGENTS.md` for ship bar, loops, and Grok operator rules.
+---
 
-## Local Hardware & Models
+## Architecture
 
-- Runs great on M1/M-series (Vite dev is light).
-- For private angle generation: run ForgeRouter (`forgerouter serve`) and select **Local** in the forge panel.
-- Recommended local models via ForgeRouter: Qwen3-8B-4bit, Gemma-7B-4bit, Phi-4-mini (see ForgeRouter README).
-- No GPU required for the dashboard itself.
+```mermaid
+flowchart TD
+    A[Mock feed or real X proxy<br/>/api/x-search] --> B[Post store + merge]
+    B --> C[Keyword + semantic clustering]
+    C --> D[Cluster compute<br/>volume, avg sentiment, velocity shift]
+    D --> E[Insight engine<br/>shifts, gaps, sparks]
+    E --> F[Content forge<br/>templates / Grok / local LLM]
+    F --> G[UI: clusters + timeline + forge panel]
+    G --> H[Copy / export MD + JSON]
+```
 
-## Example Output (Forge)
+Post processing stays in the browser for speed and privacy; the serverless proxies exist only to keep tokens off the client and to enforce the spend cap.
 
-**Cluster:** "AI Agents" (volume 12, sentiment +0.4)
+---
 
-**Forged:**
-- Hook: Everyone is wrong about AI Agents — here's the angle no one is writing.
-- Thread starter: 1/ The AI Agents narrative just flipped. Here's what changed...
-- Contrarian: AI Agents isn't exploding — it's maturing. Here's how to play the next phase.
-- Sparks: Prototype a narrow agent that automates one repetitive step...
+## Configuration
 
-Export as Markdown thread ready for X/LinkedIn.
+- Keyword buckets and defaults: `src/config.json`
+- Domain helpers and tests: `src/lib/*`
+- Serverless proxies: `api/x-search.js`, `api/forge-chat.js`
 
-## Project Structure (key)
+Relevant environment variables (all server-side, set in Vercel or `vercel dev`):
+
+| Variable | Purpose |
+|----------|---------|
+| `X_BEARER_TOKEN` | X recent-search access (App-only bearer) |
+| `X_SPEND_CAP_USD` | Monthly real-X spend cap (default `$20`) |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV store used to enforce the spend cap |
+| `XAI_API_KEY` | Server-side Grok forge via `/api/forge-chat` |
+
+---
+
+## Project structure
 
 ```
 trendforge/
 ├── src/
-│   ├── App.tsx          # Main UI
-│   ├── config.json      # Buckets, poll intervals, queries
-│   ├── lib/
-│   │   ├── clusters.ts  # Keyword clustering + velocity shift
-│   │   ├── feed.ts      # Mock/real X fetch + merge
-│   │   ├── narrative.ts # Insights + content forge
-│   │   └── insights.ts  # Sparks + velocity helpers
-│   └── ...
-├── api/x-search.js      # Vercel serverless proxy for real X
-├── public/              # static
+│   ├── App.tsx            # Orchestration / main UI
+│   ├── config.json        # Keyword buckets, defaults
+│   ├── components/        # Panels, charts, UI primitives
+│   └── lib/               # Pure helpers + tests (clusters, insights, forge, analytics, export)
+├── api/
+│   ├── x-search.js        # X recent-search proxy (spend-capped)
+│   └── forge-chat.js      # xAI Grok proxy (OpenAI-compatible)
 └── package.json
 ```
 
-## Current Status & Limitations (2026-07-05)
+---
 
-Functional end-to-end: live feed → cluster → insights → forge → export.
+## Contributing
 
-**Current intelligence layer:** Rule/keyword based (fast, no deps).  
-**Next leverage:** Semantic clustering (embeddings via transformers.js or server) + LLM angle generation (local via ForgeRouter or Grok).
-
-See inline comments for recent: real X merge behavior, sparks, persistence.
-
-## Improvements Made in This Review
-- Stronger README with quickstart, architecture diagram, example, local notes, config hints.
-- .gitignore hardened (secrets, builds).
-- MIT LICENSE added.
-- Inventory + roadmap alignment.
-
-## Next Actions (from roadmap)
-See MASTER_ROADMAP.md. High-ROI:
-- Semantic clustering + better velocity signals.
-- Export formats (MD thread file + images folder + JSON).
-- Simple analytics panel (theme distribution).
-- Config file / CLI flags for queries.
-- Handoff to InsightForge-style or MakerLog.
-
-## Run / Build
-
-```bash
-npm run dev
-npm run build
-npm run preview
-npm run lint
-```
+Open source, built in public. Prefer pure functions + tests for domain logic in `src/lib/`. Before opening a PR, run `npm run lint && npm run test && npm run build`. See `AGENTS.md` and `GOALS.md` for operating principles and the ship bar.
 
 ## License
 
-MIT — see LICENSE.
-
-Built for momentum and real usefulness on the edge.
+MIT — see `LICENSE`.
