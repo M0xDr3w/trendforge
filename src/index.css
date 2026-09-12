@@ -6,10 +6,11 @@
   --bg: #050508;
   --panel: rgba(12, 12, 18, 0.92);
   --panel-glass: rgba(12, 12, 18, 0.72);
-  --border: #22222a;
+  --input-bg: rgba(22, 22, 32, 0.98);
+  --border: #2e2e3a;
   --border-glow: rgba(230, 0, 46, 0.35);
   --text: #f0f0f5;
-  --muted: #88889a;
+  --muted: #a8a8bc;
   --accent: #e6002e;
   --cyan: #00e5ff;
   --green: #00ff88;
@@ -25,6 +26,61 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Form controls — browsers default to black text on dark UIs without explicit color */
+.tf-field,
+input:not([type='checkbox']):not([type='radio']):not([type='range']),
+textarea,
+select {
+  color: var(--text);
+  background-color: var(--input-bg);
+  border: 1px solid var(--border);
+  caret-color: var(--cyan);
+}
+
+.tf-field::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  box-shadow: 0 0 0 1000px var(--input-bg) inset;
+  transition: background-color 9999s ease-out 0s;
+}
+
+/* Layered so per-instance Tailwind utilities (e.g. pl-9, py-2, rounded-*) can
+   still override these defaults — unlayered CSS otherwise beats the utilities layer. */
+@layer components {
+  .tf-field {
+    width: 100%;
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .tf-field:focus {
+    outline: none;
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.25);
+  }
+
+  .tf-field:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
 }
 
 .font-display {

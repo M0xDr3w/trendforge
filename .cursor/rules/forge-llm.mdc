@@ -1,0 +1,14 @@
+---
+description: LLM forge, Grok proxy, and local OpenAI-compatible gateways
+globs: api/forge-chat.js,src/lib/forge.ts,src/components/ForgePanel.tsx
+alwaysApply: false
+---
+
+# Forge / LLM
+
+- **Grok preset** uses same-origin `POST /api/forge-chat` (server holds `XAI_API_KEY`). Never put xAI keys in the client bundle
+- Optional UI session key is `sessionStorage` only; migrate away from long-lived `localStorage` secrets
+- Local gateways (Ollama / LM Studio / ForgeRouter): paste base URL with or without `/v1`; use a **real model tag** (e.g. `llama3.2`), never hardcode `model: "default"` for Ollama
+- Ollama binds `127.0.0.1` by default — prefer `http://127.0.0.1:11434`, not a LAN IP
+- Streaming SSE must flush trailing buffers; map abort timeout vs user cancel distinctly
+- LLM failure falls back to templates; persist **last forge** for UI + export (`preferences` / export contract)

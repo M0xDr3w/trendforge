@@ -1,4 +1,4 @@
-import { Play, Pause, RefreshCw } from 'lucide-react'
+import { Play, Pause, RefreshCw, Bell, BellOff } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { HudLabel, NeoButton, StatPill } from './ui'
 import { connectionLabel, type ConnectionStatus } from './motion'
@@ -15,8 +15,11 @@ interface HeaderProps {
   onReset: () => void
   onAddCustomPost: () => void
   onToggleLiveReal: () => void
+  alertsEnabled: boolean
+  onToggleAlerts: () => void
   onExportState: () => void
   onExportMarkdown: () => void
+  onExportBundle: () => void
   onLogToMakerlog: () => void
 }
 
@@ -31,8 +34,11 @@ export function Header({
   onReset,
   onAddCustomPost,
   onToggleLiveReal,
+  alertsEnabled,
+  onToggleAlerts,
   onExportState,
   onExportMarkdown,
+  onExportBundle,
   onLogToMakerlog,
 }: HeaderProps) {
   const reduceMotion = useReducedMotion()
@@ -98,9 +104,23 @@ export function Header({
         >
           {liveReal ? '⏹ Live real' : '▶ Live real'}
         </NeoButton>
+        <NeoButton
+          onClick={onToggleAlerts}
+          variant={alertsEnabled ? 'active' : 'default'}
+          size="xs"
+          title={alertsEnabled ? 'Mute shift alerts' : 'Enable shift alerts when clusters spike'}
+          aria-label={alertsEnabled ? 'Mute shift alerts' : 'Enable shift alerts'}
+          aria-pressed={alertsEnabled}
+        >
+          {alertsEnabled ? <Bell size={14} aria-hidden /> : <BellOff size={14} aria-hidden />}
+          Alerts
+        </NeoButton>
         <NeoButton onClick={onExportState} size="xs">Export JSON</NeoButton>
         <NeoButton onClick={onExportMarkdown} size="xs" className="border-[var(--accent)]/30 bg-[var(--accent)]/10">
           Download thread
+        </NeoButton>
+        <NeoButton onClick={onExportBundle} size="xs" variant="accent">
+          Download bundle
         </NeoButton>
         <NeoButton onClick={onLogToMakerlog} size="xs">MakerLog</NeoButton>
       </div>

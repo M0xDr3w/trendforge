@@ -1,7 +1,7 @@
 # TrendForge — Improvement Plan & Grok Build Prompts
 
-**Updated:** 2026-07-07  
-**Live:** https://trendforge-sable.vercel.app  
+**Updated:** 2026-07-08  
+**Live:** https://trendforge-opal.vercel.app  
 **Stack:** React 19, Vite 8, Tailwind 4, Recharts, Framer Motion, Vercel serverless
 
 ---
@@ -231,7 +231,7 @@ No secrets in error messages.
 |------|--------|-------|
 | Code-split Recharts | 1h | dynamic import AnalyticsSidebar + VolumeChart |
 | Connect Git → Vercel auto-deploy | 15m | vercel.link/git |
-| Update `.env.example` prod callback URL | 5m | trendforge-sable.vercel.app |
+| Update `.env.example` prod callback URL | 5m | trendforge-opal.vercel.app |
 | Unit tests for analytics + semantic | 2h | vitest, pure functions only |
 | Slice `max_results` in proxy response | 30m | honor caller's limit after X fetch |
 

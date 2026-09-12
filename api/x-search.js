@@ -1,8 +1,25 @@
 // Vercel serverless function to proxy X API calls securely
 // Set X_BEARER_TOKEN in Vercel env vars.
+// Enforces a monthly spend cap using Vercel KV when configured.
+
+import { kv } from '@vercel/kv'
 
 function sendError(res, status, code, error, hint) {
   return res.status(status).json({ error, code, hint })
+}
+
+function monthKey(base = 'xapi:spend_cents') {
+  const d = new Date()
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${base}:${yyyy}-${mm}`
+}
+
+function parseUsdEnv(name, fallbackNumber) {
+  const raw = process.env[name]
+  if (!raw) return fallbackNumber
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 0 ? n : fallbackNumber
 }
 
 function parseXApiError(httpStatus, bodyText) {
@@ -27,7 +44,7 @@ function parseXApiError(httpStatus, bodyText) {
     return {
       code: 'invalid_max_results',
       error: 'Invalid max_results parameter',
-      hint: 'max_results must be between 10 and 100.',
+      hint: 'max_results must be between 1 and 100. Values below 10 fetch 10 from X and slice the response.',
     }
   }
   if (apiStatus === 429) {
@@ -69,18 +86,19 @@ function parseXApiError(httpStatus, bodyText) {
 export default async function handler(req, res) {
   const { query = 'AI', max_results = '20' } = req.query
   const parsed = parseInt(max_results, 10)
+  const requested = Number.isFinite(parsed) ? parsed : 20
 
-  if (Number.isFinite(parsed) && (parsed < 10 || parsed > 100)) {
+  if (Number.isFinite(parsed) && (parsed < 1 || parsed > 100)) {
     return sendError(
       res,
       400,
       'invalid_max_results',
       'Invalid max_results parameter',
-      'max_results must be between 10 and 100.',
+      'max_results must be between 1 and 100. X API requires fetching at least 10; smaller values are sliced after fetch.',
     )
   }
 
-  const mr = Math.min(100, Math.max(10, Number.isFinite(parsed) ? parsed : 20))
+  const mr = Math.min(100, Math.max(10, requested))
 
   const token = process.env.X_BEARER_TOKEN
   if (!token) {
@@ -90,6 +108,39 @@ export default async function handler(req, res) {
       'token_missing',
       'X bearer token not configured',
       'Set X_BEARER_TOKEN in Vercel env (Production + Preview), then redeploy.',
+    )
+  }
+
+  // Hard monthly spend cap (default $20). Requires Vercel KV.
+  const capUsd = parseUsdEnv('X_SPEND_CAP_USD', 20)
+  const perPostUsd = parseUsdEnv('X_POST_COST_USD', 0.005) // ~ $0.005 per post read
+  const plannedPosts = mr
+  const plannedCents = Math.ceil(plannedPosts * perPostUsd * 100)
+  const capCents = Math.round(capUsd * 100)
+
+  // KV is required to enforce the cap in production.
+  const kvConfigured =
+    !!process.env.KV_REST_API_URL && !!process.env.KV_REST_API_TOKEN
+
+  if (!kvConfigured) {
+    return sendError(
+      res,
+      500,
+      'spend_store_missing',
+      'Monthly spend store not configured',
+      'Set Vercel KV env (KV_REST_API_URL, KV_REST_API_TOKEN) to enforce X_SPEND_CAP_USD.',
+    )
+  }
+
+  const key = monthKey()
+  const currentCents = Number((await kv.get(key)) || 0) || 0
+  if (currentCents + plannedCents > capCents) {
+    return sendError(
+      res,
+      402,
+      'spend_cap',
+      'Monthly X budget cap reached',
+      `Cap ${capUsd.toFixed(2)} USD reached for ${key.split(':')[1]}. Wait until next month or raise X_SPEND_CAP_USD.`,
     )
   }
 
@@ -107,6 +158,17 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json()
+
+    // Spend accounting based on actual posts returned (best-effort).
+    const actualCount = Array.isArray(data?.data) ? data.data.length : 0
+    if (actualCount > 0) {
+      const actualCents = Math.ceil(actualCount * perPostUsd * 100)
+      try {
+        await kv.incrby(key, actualCents)
+      } catch {
+        // Non-fatal: proceed, but future calls will still preflight against KV.
+      }
+    }
 
     const posts = (data.data || []).map((tweet, i) => {
       const user = (data.includes?.users || []).find(u => u.id === tweet.author_id) || {}
@@ -133,7 +195,7 @@ export default async function handler(req, res) {
       }
     })
 
-    res.json(posts)
+    res.json(posts.slice(0, requested))
   } catch (err) {
     return sendError(
       res,

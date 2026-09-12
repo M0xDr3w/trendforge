@@ -1,0 +1,15 @@
+---
+description: Core TrendForge stack, ship bar, secrets, and verification
+alwaysApply: true
+---
+
+# TrendForge core
+
+- Read [AGENTS.md](AGENTS.md) + [GOALS.md](GOALS.md) for identity, ship bar (G1), and loops
+- Stack: React 19 + Vite + Tailwind 4 + Vercel serverless (`api/x-search.js`, `api/forge-chat.js`)
+- Production: `https://trendforge-opal.vercel.app`
+- Secrets never in client/git/chat: `X_BEARER_TOKEN`, `XAI_API_KEY` — Vercel / `vercel dev` only
+- Prefer pure helpers + tests in `src/lib/`; keep `App.tsx` as orchestration
+- No auto-post to X; every ship is a human gate
+- After meaningful UI/API changes: `npm run lint && npm run test && npm run build`
+- Ship small vertical slices; one mission per session

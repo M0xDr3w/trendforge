@@ -1,7 +1,7 @@
 import { Search, Zap } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import type { XPost, SavedRadar } from '../lib/types'
-import { HudLabel, NeoButton, Panel } from './ui'
+import { HudLabel, NeoButton, Panel, FieldInput } from './ui'
 import { cardVariants, pageVariants, postEnterVariants } from './motion'
 import { RadarEmptyState } from './empty/EmptyStates'
 import { RadarManager } from './RadarManager'
@@ -22,6 +22,7 @@ interface FeedPanelProps {
   onAddRadar: (name: string, query: string) => void
   onDeleteRadar: (id: string) => void
   onSyncRadar: (radar: SavedRadar) => void
+  onSyncAllRadars: () => void
 }
 
 function avatarInitial(username: string): string {
@@ -44,6 +45,7 @@ export function FeedPanel({
   onAddRadar,
   onDeleteRadar,
   onSyncRadar,
+  onSyncAllRadars,
 }: FeedPanelProps) {
   const reduceMotion = useReducedMotion()
   const visiblePosts = filteredPosts.slice(0, 12)
@@ -65,12 +67,12 @@ export function FeedPanel({
 
       <div className="mb-3 flex gap-2">
         <div className="relative min-w-0 flex-1">
-          <input
+          <FieldInput
             value={feedSearch}
             onChange={(e) => onFeedSearchChange(e.target.value)}
             placeholder="Filter feed (text or @user)..."
             aria-label="Filter feed by text or username"
-            className="w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--panel)] py-2 pl-9 pr-3 text-sm backdrop-blur-sm placeholder:text-[var(--muted)] focus:border-[var(--cyan)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--cyan)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+            className="rounded-[var(--radius-md)] py-2 pl-9 pr-3 backdrop-blur-sm"
           />
           <Search size={15} className="pointer-events-none absolute left-3 top-2.5 text-[var(--muted)]" aria-hidden />
         </div>
@@ -153,6 +155,7 @@ export function FeedPanel({
         onAdd={onAddRadar}
         onDelete={onDeleteRadar}
         onSync={onSyncRadar}
+        onSyncAll={onSyncAllRadars}
       />
     </div>
   )
