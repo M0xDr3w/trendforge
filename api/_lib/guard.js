@@ -151,9 +151,13 @@ export function getAllowedModels() {
 
 export function resolveForgeModel(requested) {
   const allowed = getAllowedModels()
-  const candidate = String(requested || '').trim().toLowerCase() || FORGE_DEFAULT_MODEL
-  if (allowed.includes(candidate)) return candidate
-  return allowed[0] || FORGE_DEFAULT_MODEL
+  const raw = String(requested || '').trim().toLowerCase()
+  // Unspecified: server default. Explicit but outside the allowlist: reject
+  // loudly (400 at the route) instead of silently substituting, so probing
+  // and typos are visible instead of masked.
+  if (!raw) return { model: FORGE_DEFAULT_MODEL, allowed: true }
+  if (allowed.includes(raw)) return { model: raw, allowed: true }
+  return { model: allowed[0] || FORGE_DEFAULT_MODEL, allowed: false, requested: raw }
 }
 
 export function clampMaxTokens(requested) {

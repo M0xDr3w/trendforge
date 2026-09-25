@@ -19,6 +19,7 @@ import {
   checkRateLimit,
   clampMaxTokens,
   clampTemperature,
+  getAllowedModels,
   getClientIp,
   isAllowedOrigin,
   rateLimitConfig,
@@ -103,6 +104,12 @@ export default async function handler(req, res) {
     })
   }
 
+  // Review decision (kept deliberately): a caller-supplied Bearer key is still
+  // honored. It spends the *caller's* xAI quota, not the owner's, and exists
+  // so the app works on deployments without XAI_API_KEY (session key in the
+  // forge panel, sessionStorage only) and so operators can isolate personal
+  // quota. Proxy-hop abuse is bounded by the same-origin gate + per-IP rate
+  // limit above; cross-site browser abuse is impossible without the origin.
   const envKey = (process.env.XAI_API_KEY || '').trim()
   const headerKey = extractBearer(req)
   const apiKey = headerKey || envKey
@@ -147,9 +154,18 @@ export default async function handler(req, res) {
 
   const stream = Boolean(body.stream)
   // Server decides the model and token budget: caller preference is honored
-  // only inside the allowlist / cap.
+  // only inside the allowlist / cap. An explicitly disallowed model is a
+  // loud 400 (not a silent swap) so probing and typos stay visible.
+  const { model: resolvedModel, allowed: modelAllowed } = resolveForgeModel(body.model)
+  if (!modelAllowed) {
+    return sendJson(res, 400, {
+      error: `Model not allowed: ${String(body.model).slice(0, 80)}`,
+      code: 'invalid_model',
+      hint: `Allowed models: ${getAllowedModels().join(', ')} (FORGE_ALLOWED_MODELS). Omit model for the server default.`,
+    })
+  }
   const payload = {
-    model: resolveForgeModel(body.model),
+    model: resolvedModel,
     messages: body.messages,
     temperature: clampTemperature(body.temperature),
     max_tokens: clampMaxTokens(body.max_tokens),
