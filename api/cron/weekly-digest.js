@@ -3,9 +3,10 @@
 // stored sessions, syncs recent saves (bounded), and stores a fresh Grok
 // digest per user. Emailing is out of scope — digests are read in the app.
 
+import crypto from 'node:crypto'
 import { kv } from '@vercel/kv'
-import { decryptTokens, encryptTokens, requireSessionSecret, sessionKey } from '../_lib/session.js'
-import { refreshAccessToken } from '../_lib/xapi.js'
+import { decryptTokens, requireSessionSecret, sessionKey } from '../_lib/session.js'
+import { refreshSessionTokens } from '../_lib/auth.js'
 import { fetchAllBookmarks, bookmarkCostPerPost } from '../_lib/xapi.js'
 import {
   bookmarksKey,
@@ -26,7 +27,13 @@ function authorized(req) {
   if (!secret) return false
   const header = String(req.headers?.authorization || '')
   const m = header.match(/^Bearer\s+(.+)$/i)
-  return !!m && m[1].trim().length === secret.length && m[1].trim() === secret
+  if (!m) return false
+  // Constant-time compare on fixed-length hashes: no length leak, no
+  // short-circuit equality. timingSafeEqual throws on length mismatch, so
+  // hash both sides first.
+  const presented = crypto.createHash('sha256').update(m[1].trim()).digest()
+  const expected = crypto.createHash('sha256').update(secret).digest()
+  return crypto.timingSafeEqual(presented, expected)
 }
 
 export default async function handler(req, res) {
@@ -69,7 +76,16 @@ export default async function handler(req, res) {
   }
 
   const results = []
-  for (const full of sessionIds.slice(0, 25)) {
+  // No silent user cap: iterate every session, but stop visibly before the
+  // function timeout and report exactly what was (and wasn't) processed.
+  const startedAt = Date.now()
+  const BUDGET_MS = 50_000
+  let stoppedEarly = false
+  for (const full of sessionIds) {
+    if (Date.now() - startedAt > BUDGET_MS) {
+      stoppedEarly = true
+      break
+    }
     const sid = String(full).split(':').pop()
     try {
       const outcome = await digestOneSession({ sid, secret, apiKey })
@@ -78,7 +94,14 @@ export default async function handler(req, res) {
       results.push({ sid: `${sid.slice(0, 6)}…`, ok: false, error: err?.message || 'failed' })
     }
   }
-  return res.json({ ok: true, sessions: results.length, results })
+  return res.json({
+    ok: true,
+    totalSessions: sessionIds.length,
+    processed: results.length,
+    skipped: sessionIds.length - results.length,
+    stoppedEarly,
+    results,
+  })
 }
 
 async function digestOneSession({ sid, secret, apiKey }) {
@@ -94,22 +117,11 @@ async function digestOneSession({ sid, secret, apiKey }) {
   if (!bundle.xUserId) return { ok: false, error: 'no x user id' }
 
   if (bundle.refreshToken && Date.now() > (bundle.expiresAt || 0) - 60_000) {
-    try {
-      const tokens = await refreshAccessToken({
-        clientId: String(process.env.X_CLIENT_ID || '').trim(),
-        clientSecret: String(process.env.X_CLIENT_SECRET || '').trim(),
-        refreshToken: bundle.refreshToken,
-      })
-      bundle = {
-        ...bundle,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || bundle.refreshToken,
-        expiresAt: Date.now() + Number(tokens.expires_in || 7200) * 1000,
-      }
-      await kv.set(sessionKey(sid), encryptTokens(secret, bundle), { ex: 30 * 24 * 3600 })
-    } catch {
-      return { ok: false, error: 'refresh failed' }
-    }
+    // Single shared refresh path (KV-locked): concurrent cron/request
+    // refreshes can't burn the rotated token.
+    const result = await refreshSessionTokens({ sid, secret, bundle })
+    if (result.ok === false) return { ok: false, error: 'refresh failed' }
+    bundle = result.bundle
   }
 
   const knownIds = new Set(await kv.hkeys(bookmarksKey(bundle.xUserId)).catch(() => []))
@@ -145,7 +157,7 @@ async function digestOneSession({ sid, secret, apiKey }) {
   const themes = Array.isArray(snapshot?.themes) ? snapshot.themes : []
   const text = await callXai({
     apiKey,
-    model: resolveForgeModel(undefined),
+    model: resolveForgeModel(undefined).model,
     system: 'You are a SpaceXAI briefing writer. Reply in Markdown.',
     user: buildDigestPrompt(posts, themes),
     maxTokens: clampMaxTokens(900),
@@ -155,7 +167,7 @@ async function digestOneSession({ sid, secret, apiKey }) {
       text,
       createdAt: new Date().toISOString(),
       postCount: Math.min(40, posts.length),
-      model: resolveForgeModel(undefined),
+      model: resolveForgeModel(undefined).model,
       via: 'cron',
     })
     .catch(() => {})

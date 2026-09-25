@@ -13,8 +13,83 @@ import {
 } from './session.js'
 import { fetchMe, refreshAccessToken } from './xapi.js'
 
+const REFRESH_LOCK_SEC = 30
+
+function refreshLockKey(sid) {
+  return `tf:refresh-lock:${sid}`
+}
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
 async function destroySession(sid) {
   await kv.del(sessionKey(sid)).catch(() => {})
+}
+
+/**
+ * Single refresh path for X tokens (used by the session loader AND the
+ * weekly-digest cron). X rotates refresh tokens: two concurrent refreshes
+ * would burn the rotated token and log the user out. A short KV lock
+ * serializes refreshes per session; losers re-read the winner's result
+ * instead of attempting their own refresh.
+ *
+ * Returns { bundle, refreshed } on success paths, or { ok: false, code }
+ * only when X positively revoked access (HTTP 400).
+ */
+export async function refreshSessionTokens({ sid, secret, bundle }) {
+  const lockKey = refreshLockKey(sid)
+  let locked = false
+  try {
+    locked = (await kv.set(lockKey, String(Date.now()), { nx: true, ex: REFRESH_LOCK_SEC })) === 'OK'
+  } catch {
+    locked = false
+  }
+
+  if (!locked) {
+    // Someone else is refreshing: wait for their result, then use it.
+    for (let i = 0; i < 5; i++) {
+      await sleep(500)
+      try {
+        const sealed = await kv.get(sessionKey(sid))
+        if (sealed) {
+          const fresh = decryptTokens(secret, sealed)
+          if ((fresh.gen || 0) > (bundle.gen || 0)) {
+            return { bundle: fresh, refreshed: true }
+          }
+        }
+      } catch {
+        // Keep polling; fall through to the stale bundle below.
+      }
+    }
+    // Lock holder died or is slow: proceed with the stale token once.
+    // The downstream X call surfaces a natural 401 — never destroy here.
+    return { bundle, refreshed: false }
+  }
+
+  try {
+    const tokens = await refreshAccessToken({
+      clientId: String(process.env.X_CLIENT_ID || '').trim(),
+      clientSecret: String(process.env.X_CLIENT_SECRET || '').trim(),
+      refreshToken: bundle.refreshToken,
+    })
+    const next = {
+      ...bundle,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token || bundle.refreshToken,
+      expiresAt: Date.now() + Number(tokens.expires_in || 7200) * 1000,
+      gen: (bundle.gen || 0) + 1,
+    }
+    await kv.set(sessionKey(sid), encryptTokens(secret, next), { ex: SESSION_TTL_SEC })
+    return { bundle: next, refreshed: true }
+  } catch (err) {
+    if (err?.status === 400) {
+      await destroySession(sid)
+      return { ok: false, code: 'session_expired', error: 'X revoked access — sign in again' }
+    }
+    // Transient refresh failure: proceed with the stale token once.
+    return { bundle, refreshed: false }
+  } finally {
+    await kv.del(lockKey).catch(() => {})
+  }
 }
 
 export async function loadSession(req) {
@@ -46,26 +121,9 @@ export async function loadSession(req) {
   // Refresh once when stale (60s skew). Missing refresh token => keep going;
   // the downstream X call will surface 401 and the UI prompts re-login.
   if (bundle.refreshToken && Date.now() > (bundle.expiresAt || 0) - 60_000) {
-    try {
-      const tokens = await refreshAccessToken({
-        clientId: String(process.env.X_CLIENT_ID || '').trim(),
-        clientSecret: String(process.env.X_CLIENT_SECRET || '').trim(),
-        refreshToken: bundle.refreshToken,
-      })
-      bundle = {
-        ...bundle,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || bundle.refreshToken,
-        expiresAt: Date.now() + Number(tokens.expires_in || 7200) * 1000,
-      }
-      await kv.set(sessionKey(sid), encryptTokens(secret, bundle), { ex: SESSION_TTL_SEC })
-    } catch (err) {
-      if (err?.status === 400) {
-        await destroySession(sid)
-        return { ok: false, code: 'session_expired', error: 'X revoked access — sign in again' }
-      }
-      // Transient refresh failure: proceed with the stale token once.
-    }
+    const result = await refreshSessionTokens({ sid, secret, bundle })
+    if (result.ok === false) return result
+    bundle = result.bundle
   }
 
   // Backfill the X user id on old sessions.

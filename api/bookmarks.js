@@ -113,7 +113,7 @@ export default async function handler(req, res) {
     try {
       const ranked = await callXai({
         apiKey,
-        model: resolveForgeModel(undefined),
+        model: resolveForgeModel(undefined).model,
         system: ASSIST_SYSTEM,
         user: `Question: ${ask}\n\nSaves:\n${listing}`,
         maxTokens: Math.min(600, clampMaxTokens(600)),

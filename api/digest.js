@@ -115,7 +115,7 @@ export default async function handler(req, res) {
   try {
     text = await callXai({
       apiKey,
-      model: resolveForgeModel(req.body?.model),
+      model: resolveForgeModel(req.body?.model).model,
       system: 'You are a SpaceXAI briefing writer. Reply in Markdown.',
       user: buildDigestPrompt(posts, themes),
       maxTokens: clampMaxTokens(req.body?.max_tokens ?? 900),
@@ -133,7 +133,7 @@ export default async function handler(req, res) {
     text,
     createdAt: new Date().toISOString(),
     postCount: Math.min(40, posts.length),
-    model: resolveForgeModel(req.body?.model),
+    model: resolveForgeModel(req.body?.model).model,
   }
   await kv.set(digestKey(uid), digest).catch(() => {})
   return res.json(digest)

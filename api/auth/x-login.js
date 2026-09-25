@@ -10,7 +10,6 @@ import {
   PKCE_TTL_SEC,
   publicBaseUrl,
 } from '../_lib/session.js'
-import { isAllowedOrigin } from '../_lib/guard.js'
 
 const SCOPES = 'bookmark.read tweet.read users.read offline.access'
 
@@ -19,14 +18,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed', code: 'method_not_allowed' })
   }
 
-  // Same-origin start keeps third-party sites from kicking off logins.
-  if (!isAllowedOrigin(req)) {
-    return res.status(403).json({
-      error: 'Cross-origin login blocked',
-      code: 'origin_forbidden',
-      hint: 'Start sign-in from the deployed app itself.',
-    })
-  }
+  // Deliberately NO same-origin gate here: this is a top-level browser
+  // navigation to X (link click / typed URL), which carries no Origin header
+  // and only sometimes a Referer — gating on it 403s legitimate sign-ins.
+  // CSRF protection comes from OAuth itself: single-use random `state`
+  // bound to a 10-minute server-side PKCE record. An attacker who tricks a
+  // victim into starting a login gains nothing: the code is exchanged
+  // server-side and the session is sealed to whoever completes the flow.
 
   const clientId = String(process.env.X_CLIENT_ID || '').trim()
   if (!clientId) {

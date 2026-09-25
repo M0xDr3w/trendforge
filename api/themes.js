@@ -165,7 +165,7 @@ export default async function handler(req, res) {
     try {
       const text = await callXai({
         apiKey,
-        model: resolveForgeModel(undefined),
+        model: resolveForgeModel(undefined).model,
         system: LABEL_SYSTEM,
         user: buildLabelPrompt({ needsLabeling, leftovers: pendingLeftovers, existingNames, byId }),
         maxTokens: clampMaxTokens(800),
@@ -186,7 +186,7 @@ export default async function handler(req, res) {
       if (!target) continue
       const name = cleanName(l?.name, target.name)
       nameBySig.set(target.sig, name)
-      freshLabels[target.sig] = { name, model: resolveForgeModel(undefined), at: new Date().toISOString() }
+      freshLabels[target.sig] = { name, model: resolveForgeModel(undefined).model, at: new Date().toISOString() }
     }
   }
   for (const c of needsLabeling) {
