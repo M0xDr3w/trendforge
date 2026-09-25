@@ -25,6 +25,7 @@ import {
   resolveForgeModel,
   validateMessages,
 } from './_lib/guard.js'
+import { getSessionId, sessionKey } from './_lib/session.js'
 
 const XAI_CHAT_URL = 'https://api.x.ai/v1/chat/completions'
 const UPSTREAM_TIMEOUT_MS = 55_000
@@ -75,13 +76,25 @@ export default async function handler(req, res) {
   }
 
   const { limit, windowSec } = rateLimitConfig('FORGE_CHAT', 30, 3600)
-  const rate = await checkRateLimit({
-    kv: kvConfigured() ? kv : null,
-    prefix: 'forge:ratelimit',
-    ip: getClientIp(req),
-    limit,
-    windowSec,
-  })
+  // Signed-in X sessions carry their own trust: skip the per-IP bucket.
+  let forgeAuthed = false
+  const forgeSid = getSessionId(req)
+  if (forgeSid && kvConfigured()) {
+    try {
+      forgeAuthed = !!(await kv.get(sessionKey(forgeSid)))
+    } catch {
+      forgeAuthed = false
+    }
+  }
+  const rate = forgeAuthed
+    ? { allowed: true, remaining: limit }
+    : await checkRateLimit({
+        kv: kvConfigured() ? kv : null,
+        prefix: 'forge:ratelimit',
+        ip: getClientIp(req),
+        limit,
+        windowSec,
+      })
   if (!rate.allowed) {
     return sendJson(res, 429, {
       error: 'Forge rate limit exceeded',

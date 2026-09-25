@@ -10,6 +10,7 @@ import {
   isAllowedOrigin,
   rateLimitConfig,
 } from './_lib/guard.js'
+import { getSessionId, sessionKey } from './_lib/session.js'
 
 function sendError(res, status, code, error, hint) {
   return res.status(status).json({ error, code, hint })
@@ -163,16 +164,29 @@ export default async function handler(req, res) {
   }
 
   const key = monthKey()
+  // A valid X session is its own gate: signed-in callers skip the per-IP
+  // bucket (the shared monthly spend cap below still applies to everyone).
+  let authed = false
+  const sid = getSessionId(req)
+  if (sid && kvConfigured) {
+    try {
+      authed = !!(await kv.get(sessionKey(sid)))
+    } catch {
+      authed = false
+    }
+  }
   // Per-IP rate limit sits in front of the shared spend cap so one abusive
   // network can't burn the owner's whole monthly budget.
   const { limit: searchLimit, windowSec: searchWindow } = rateLimitConfig('X_SEARCH', 60, 3600)
-  const rate = await checkRateLimit({
-    kv: kvConfigured ? kv : null,
-    prefix: 'xapi:ratelimit',
-    ip: getClientIp(req),
-    limit: searchLimit,
-    windowSec: searchWindow,
-  })
+  const rate = authed
+    ? { allowed: true, remaining: searchLimit }
+    : await checkRateLimit({
+        kv: kvConfigured ? kv : null,
+        prefix: 'xapi:ratelimit',
+        ip: getClientIp(req),
+        limit: searchLimit,
+        windowSec: searchWindow,
+      })
   if (!rate.allowed) {
     return sendError(
       res,
