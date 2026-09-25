@@ -97,9 +97,14 @@ describe('forge model allowlist', () => {
   })
 
   it('falls back to the allowlist head for unknown models', () => {
-    expect(resolveForgeModel('gpt-5-super-premium')).toBe('grok-4.5')
-    expect(resolveForgeModel('grok-4')).toBe('grok-4')
-    expect(resolveForgeModel('  GROK-4  ')).toBe('grok-4')
+    expect(resolveForgeModel('gpt-5-super-premium')).toEqual({
+      model: 'grok-4.5',
+      allowed: false,
+      requested: 'gpt-5-super-premium',
+    })
+    expect(resolveForgeModel('grok-4')).toEqual({ model: 'grok-4', allowed: true })
+    expect(resolveForgeModel('  GROK-4  ')).toEqual({ model: 'grok-4', allowed: true })
+    expect(resolveForgeModel(undefined)).toEqual({ model: 'grok-4.5', allowed: true })
   })
 })
 
