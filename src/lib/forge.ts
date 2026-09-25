@@ -1,4 +1,5 @@
 import type { Cluster, Insight } from './types'
+import { appTokenHeaders } from './accessToken'
 import { forgeContent as templateForgeContent } from './narrative'
 
 export const FORGE_URL_STORAGE_KEY = 'trendforge-forge-url'
@@ -428,6 +429,7 @@ export interface CallForgeLlmOptions {
 function buildAuthHeaders(apiKey?: string): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...appTokenHeaders(),
   }
   const key = apiKey?.trim()
   if (key) {

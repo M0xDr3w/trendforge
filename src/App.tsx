@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { config } from './lib/config'
+import { loadAppToken, saveAppToken } from './lib/accessToken'
 import { computeClusters, buildVolumeSnapshot } from './lib/clusters'
 import { detectInsights } from './lib/narrative'
 import { generateSparks } from './lib/insights'
@@ -78,6 +79,7 @@ function App() {
   const [xApiStatus, setXApiStatus] = useState<XApiConnectionStatus>('mock')
   const [lastXApiError, setLastXApiError] = useState<XApiError | null>(null)
   const [xApiBannerDismissed, setXApiBannerDismissed] = useState(false)
+  const [appToken, setAppToken] = useState(() => loadAppToken())
   const [radars, setRadars] = useState<SavedRadar[]>(() =>
     loadRadars(config.defaultQueries, config.maxRadars),
   )
@@ -148,6 +150,10 @@ function App() {
   useEffect(() => {
     saveForgeProvider(forgeProvider)
   }, [forgeProvider])
+
+  useEffect(() => {
+    saveAppToken(appToken)
+  }, [appToken])
 
   useEffect(() => {
     if (lastForge) saveLastForge(lastForge)
@@ -752,6 +758,9 @@ Tags: trendforge,signals,forge`).catch(() => {})
               filteredPosts={filteredPosts}
               feedSearch={feedSearch}
               isRunning={isRunning}
+              isSample={xApiStatus !== 'connected'}
+              appToken={appToken}
+              onAppTokenChange={setAppToken}
               radars={radars}
               maxRadars={config.maxRadars}
               defaultQueries={config.defaultQueries}

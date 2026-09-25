@@ -7,6 +7,9 @@ export type XApiErrorCode =
   | 'spend_store_missing'
   | 'invalid_max_results'
   | 'rate_limit'
+  | 'proxy_rate_limit'
+  | 'origin_forbidden'
+  | 'app_unauthorized'
   | 'unauthorized'
   | 'forbidden'
   | 'invalid_request'
@@ -59,6 +62,18 @@ const ERROR_MAP: Record<XApiErrorCode, { message: string; hint: string }> = {
   rate_limit: {
     message: 'X API rate limit reached',
     hint: 'Wait a minute and retry. LIVE REAL polls every ~45s to stay conservative.',
+  },
+  proxy_rate_limit: {
+    message: 'Too many X searches from your network',
+    hint: 'The proxy rate limit (X_SEARCH_PER_HOUR, default 60/hr) tripped before any X spend. Wait and retry.',
+  },
+  origin_forbidden: {
+    message: 'Cross-origin proxy request blocked',
+    hint: 'Use the deployed app itself (same origin). If you see this inside the app, check APP_ORIGIN in Vercel env.',
+  },
+  app_unauthorized: {
+    message: 'App access token required',
+    hint: 'This deployment sets APP_ACCESS_TOKEN. Paste the matching token in the feed panel session field.',
   },
   unauthorized: {
     message: 'X API unauthorized',
@@ -134,7 +149,9 @@ export function isFatalXApiError(code: XApiErrorCode): boolean {
     code === 'forbidden' ||
     code === 'credits_depleted' ||
     code === 'spend_cap' ||
-    code === 'spend_store_missing'
+    code === 'spend_store_missing' ||
+    code === 'origin_forbidden' ||
+    code === 'app_unauthorized'
   )
 }
 

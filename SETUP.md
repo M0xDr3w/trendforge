@@ -161,6 +161,24 @@ In the app: click **TEST** or **SYNC REAL X**.
 
 For production: set `X_BEARER_TOKEN` in Vercel Dashboard → Environment Variables, then redeploy.
 
+### Proxy abuse gates (no user login)
+
+Both `/api/x-search` and `/api/forge-chat` enforce, in order:
+
+1. **Same-origin check** — `Origin`/`Referer` must match the deployment host
+   (`APP_ORIGIN` overrides when set). Bare curl / third-party sites are rejected.
+2. **Optional access token** — only when `APP_ACCESS_TOKEN` is set server-side; the app sends
+   it as the `x-app-token` header from a session-only field in the feed panel.
+3. **Per-IP rate limits** — `X_SEARCH_PER_HOUR` (default `60`) and `FORGE_CHAT_PER_HOUR`
+   (default `30`), enforced in Vercel KV when bound, best-effort in-memory otherwise.
+4. **Forge model/token caps** — `FORGE_ALLOWED_MODELS` (default `grok-4.5,grok-4,grok-3`) and
+   `FORGE_MAX_TOKENS` (default `1000`, ceiling `2000`). The server picks the model and budget;
+   caller values outside the allowlist/cap are clamped.
+5. **Monthly spend cap** (x-search) — `X_SPEND_CAP_USD` (default `20`) in KV, unchanged.
+
+No new secrets are required: with `APP_ACCESS_TOKEN` unset, the owner uses the app normally
+from its own origin. Set `APP_ACCESS_TOKEN` only for extra lockdown.
+
 ---
 
 ## 6. Dashboard only (mock feed)

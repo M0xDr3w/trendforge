@@ -11,11 +11,15 @@ interface FeedPanelProps {
   filteredPosts: XPost[]
   feedSearch: string
   isRunning: boolean
+  /** True while the feed shows locally generated sample posts (not real X data). */
+  isSample: boolean
+  appToken: string
   radars: SavedRadar[]
   maxRadars: number
   defaultQueries: string[]
   syncingRadarId: string | null
   onFeedSearchChange: (value: string) => void
+  onAppTokenChange: (value: string) => void
   onForceIngest: () => void
   onSyncReal: () => void
   onTestConnection: () => void
@@ -34,11 +38,14 @@ export function FeedPanel({
   filteredPosts,
   feedSearch,
   isRunning,
+  isSample,
+  appToken,
   radars,
   maxRadars,
   defaultQueries,
   syncingRadarId,
   onFeedSearchChange,
+  onAppTokenChange,
   onForceIngest,
   onSyncReal,
   onTestConnection,
@@ -56,8 +63,18 @@ export function FeedPanel({
       <div className="mb-3 flex items-center justify-between">
         <div>
           <HudLabel className="block text-xs tracking-[0.15em]">Live X feed</HudLabel>
-          <div className="mt-1 text-sm text-[var(--muted)]">
-            {posts.length} posts · {isRunning ? 'ingesting' : 'paused'}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
+            <span>
+              {posts.length} posts · {isRunning ? 'ingesting' : 'paused'}
+            </span>
+            {isSample && (
+              <span
+                className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-amber-300"
+                title="Sample posts use fictional @sample_* accounts with invented counts — not real X data"
+              >
+                SAMPLE DATA · FICTIONAL ACCOUNTS
+              </span>
+            )}
           </div>
         </div>
         <NeoButton onClick={onForceIngest} size="xs" aria-label="Force ingest mock post">
@@ -157,6 +174,25 @@ export function FeedPanel({
         onSync={onSyncRadar}
         onSyncAll={onSyncAllRadars}
       />
+
+      <details className="mt-3 rounded-[var(--radius-sm)] border border-[var(--border)] px-2.5 py-2">
+        <summary className="cursor-pointer text-[11px] text-[var(--muted)] hover:text-[var(--text)]">
+          Owner access token (only if APP_ACCESS_TOKEN is set on the server)
+        </summary>
+        <FieldInput
+          value={appToken}
+          onChange={(e) => onAppTokenChange(e.target.value)}
+          type="password"
+          autoComplete="off"
+          placeholder="Paste access token — session only, never stored"
+          aria-label="Owner access token for API proxies"
+          className="mt-2 text-xs"
+        />
+        <p className="mt-1 text-[10px] leading-snug text-[var(--muted)]">
+          Sent as <span className="text-[var(--text)]">x-app-token</span> with proxy calls. Kept in
+          sessionStorage only; leave empty unless the deployment requires it.
+        </p>
+      </details>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import type { XPost } from './types'
 import { config } from './config'
+import { appTokenHeaders } from './accessToken'
 import {
   normalizeProxyError,
   showXApiErrorToast,
@@ -9,11 +10,20 @@ import {
 export type { FetchRealPostsResult } from './xApiErrors'
 
 export const SEED_POSTS: Omit<XPost, 'id' | 'timestamp'>[] = [
-  { text: 'AI agents are finally shipping real products this week. The loop is closing fast.', username: 'a16z', likes: 12400, retweets: 2100, sentiment: 0.8 },
-  { text: 'The new xAI Grok updates are actually impressive for coding assistance.', username: 'levelsio', likes: 8900, retweets: 1400, sentiment: 0.7 },
-  { text: 'Everyone is talking about local embeddings but no one is shipping the UX yet.', username: 'swyx', likes: 5600, retweets: 980, sentiment: 0.3 },
-  { text: 'Sentiment on consumer AI apps turning negative after the latest wave of layoffs.', username: 'techcrunch', likes: 3200, retweets: 650, sentiment: -0.6 },
-  { text: 'Real-time trend engines + MCP servers might be the killer combo for 2026.', username: 'levelsio', likes: 4100, retweets: 720, sentiment: 0.9 },
+  { text: 'AI agents are finally shipping real products this week. The loop is closing fast.', username: 'sample_atlas', likes: 1240, retweets: 210, sentiment: 0.8, sample: true },
+  { text: 'The new coding-assistant updates are actually impressive for pair programming.', username: 'sample_ledger', likes: 890, retweets: 140, sentiment: 0.7, sample: true },
+  { text: 'Everyone is talking about local embeddings but no one is shipping the UX yet.', username: 'sample_mira', likes: 560, retweets: 98, sentiment: 0.3, sample: true },
+  { text: 'Sentiment on consumer AI apps turning negative after the latest wave of layoffs.', username: 'sample_kepler', likes: 320, retweets: 65, sentiment: -0.6, sample: true },
+  { text: 'Real-time trend engines + MCP servers might be the killer combo for 2026.', username: 'sample_juno', likes: 410, retweets: 72, sentiment: 0.9, sample: true },
+]
+
+/** Obviously fictional accounts used for generated sample posts — never real handles. */
+export const SAMPLE_USERNAMES = [
+  'sample_atlas',
+  'sample_ledger',
+  'sample_mira',
+  'sample_kepler',
+  'sample_juno',
 ]
 
 export function generateMockPost(id: number): XPost {
@@ -31,11 +41,12 @@ export function generateMockPost(id: number): XPost {
   return {
     id,
     text,
-    username: ['swyx', 'levelsio', 'a16z', 'techcrunch', 'indiehackers'][Math.floor(Math.random() * 5)],
+    username: SAMPLE_USERNAMES[Math.floor(Math.random() * SAMPLE_USERNAMES.length)],
     timestamp: new Date(Date.now() - Math.random() * 1000 * 60 * 30).toISOString(),
-    likes: Math.floor(Math.random() * 12000) + 800,
-    retweets: Math.floor(Math.random() * 1800) + 120,
+    likes: Math.floor(Math.random() * 1200) + 80,
+    retweets: Math.floor(Math.random() * 180) + 12,
     sentiment: (Math.random() - 0.5) * 1.8,
+    sample: true,
   }
 }
 
@@ -54,7 +65,9 @@ export async function fetchRealPosts(
   let proxyResult: FetchRealPostsResult | null = null
 
   try {
-    const res = await fetch(`/api/x-search?query=${encodeURIComponent(query)}&max_results=20`)
+    const res = await fetch(`/api/x-search?query=${encodeURIComponent(query)}&max_results=20`, {
+      headers: { ...appTokenHeaders() },
+    })
     const data: unknown = await res.json().catch(() => ({}))
 
     if (res.ok && Array.isArray(data)) {

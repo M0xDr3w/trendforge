@@ -3,6 +3,13 @@
 // Enforces a monthly spend cap using Vercel KV when configured.
 
 import { kv } from '@vercel/kv'
+import {
+  checkAppToken,
+  checkRateLimit,
+  getClientIp,
+  isAllowedOrigin,
+  rateLimitConfig,
+} from './_lib/guard.js'
 
 function sendError(res, status, code, error, hint) {
   return res.status(status).json({ error, code, hint })
@@ -84,6 +91,29 @@ function parseXApiError(httpStatus, bodyText) {
 }
 
 export default async function handler(req, res) {
+  // Same-origin gate: the deployed app's browser fetch always carries a
+  // matching Origin/Referer; bare curl and third-party sites do not.
+  if (!isAllowedOrigin(req)) {
+    return sendError(
+      res,
+      403,
+      'origin_forbidden',
+      'Cross-origin X search requests are blocked',
+      'Call /api/x-search from the deployed app itself (same origin). Direct curl or third-party sites are rejected.',
+    )
+  }
+
+  // Optional owner lockdown: enforced only when APP_ACCESS_TOKEN is set.
+  if (!checkAppToken(req)) {
+    return sendError(
+      res,
+      401,
+      'app_unauthorized',
+      'App access token required',
+      'This deployment requires APP_ACCESS_TOKEN. Paste the matching token in the app session field.',
+    )
+  }
+
   const { query = 'AI', max_results = '20' } = req.query
   const parsed = parseInt(max_results, 10)
   const requested = Number.isFinite(parsed) ? parsed : 20
@@ -133,6 +163,26 @@ export default async function handler(req, res) {
   }
 
   const key = monthKey()
+  // Per-IP rate limit sits in front of the shared spend cap so one abusive
+  // network can't burn the owner's whole monthly budget.
+  const { limit: searchLimit, windowSec: searchWindow } = rateLimitConfig('X_SEARCH', 60, 3600)
+  const rate = await checkRateLimit({
+    kv: kvConfigured ? kv : null,
+    prefix: 'xapi:ratelimit',
+    ip: getClientIp(req),
+    limit: searchLimit,
+    windowSec: searchWindow,
+  })
+  if (!rate.allowed) {
+    return sendError(
+      res,
+      429,
+      'proxy_rate_limit',
+      'Too many X searches from your network',
+      `Limit is ${searchLimit}/hour per network — wait and retry. The shared monthly spend cap still applies.`,
+    )
+  }
+
   const currentCents = Number((await kv.get(key)) || 0) || 0
   if (currentCents + plannedCents > capCents) {
     return sendError(
