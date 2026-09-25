@@ -59,14 +59,41 @@ export function digestKey(uid) {
   return `tf:digest:${uid}:latest`
 }
 
-export function buildDigestPrompt(posts) {
-  const lines = posts
-    .slice(0, 40)
-    .map(p => `- [${p.id}] @${p.username}: ${p.text}`)
-    .join('\n')
-  return `Write a weekly brief over these ${posts.length} saved X posts.
+export function themesKey(uid) {
+  return `tf:themes:${uid}`
+}
 
-Saved posts:
+export function themeLabelsKey(uid) {
+  return `tf:theme-labels:${uid}`
+}
+
+export function buildDigestPrompt(posts, themes = []) {
+  const byId = new Map(posts.map(p => [String(p.id), p]))
+  const themed = new Set()
+  const sections = []
+  for (const t of themes.slice(0, 10)) {
+    const members = (t.postIds || []).map(id => byId.get(String(id))).filter(Boolean)
+    if (members.length === 0) continue
+    members.forEach(m => themed.add(String(m.id)))
+    sections.push(
+      `### ${t.name} (${members.length})\n` +
+        members
+          .slice(0, 8)
+          .map(p => `- [${p.id}] @${p.username}: ${String(p.text).slice(0, 220)}`)
+          .join('\n'),
+    )
+  }
+  const unthemed = posts.filter(p => !themed.has(String(p.id))).slice(0, 10)
+  if (unthemed.length > 0) {
+    sections.push(
+      `### More saves (${unthemed.length})\n` +
+        unthemed.map(p => `- [${p.id}] @${p.username}: ${String(p.text).slice(0, 220)}`).join('\n'),
+    )
+  }
+  const lines = sections.join('\n\n')
+  const total = posts.length
+  return `Write a weekly brief over these ${total} saved X posts, organized by the discovered themes.
+
 ${lines}
 
 Format (strict):

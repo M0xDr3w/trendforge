@@ -15,6 +15,7 @@ import {
   digestKey,
   kvConfigured,
   metaKey,
+  themesKey,
 } from '../_lib/spend.js'
 import { clampMaxTokens, resolveForgeModel } from '../_lib/guard.js'
 
@@ -140,11 +141,13 @@ async function digestOneSession({ sid, secret, apiKey }) {
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
   if (posts.length === 0) return { ok: false, error: 'no bookmarks' }
 
+  const snapshot = await kv.get(themesKey(bundle.xUserId)).catch(() => null)
+  const themes = Array.isArray(snapshot?.themes) ? snapshot.themes : []
   const text = await callXai({
     apiKey,
     model: resolveForgeModel(undefined),
     system: 'You are a SpaceXAI briefing writer. Reply in Markdown.',
-    user: buildDigestPrompt(posts),
+    user: buildDigestPrompt(posts, themes),
     maxTokens: clampMaxTokens(900),
   })
   await kv

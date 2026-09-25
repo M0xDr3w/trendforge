@@ -27,6 +27,21 @@ export interface WeeklyDigest {
   model?: string
 }
 
+export interface BookmarkTheme {
+  id: string
+  name: string
+  count: number
+  postIds: string[]
+  source: 'grok' | 'heuristic'
+}
+
+export interface ThemeSnapshot {
+  themes: BookmarkTheme[]
+  updatedAt: string
+  postCount: number
+  grokLabeled: number
+}
+
 export interface AuthStatus {
   signedIn: boolean
   username?: string | null
@@ -136,6 +151,14 @@ export function generateDigest(): Promise<WeeklyDigest> {
   return apiPost<WeeklyDigest>('/api/digest', {}, 'Digest generation failed')
 }
 
+export function fetchThemes(): Promise<ThemeSnapshot> {
+  return apiGet<ThemeSnapshot>('/api/themes', 'Could not load themes')
+}
+
+export function discoverThemes(): Promise<ThemeSnapshot> {
+  return apiPost<ThemeSnapshot>('/api/themes', {}, 'Theme discovery failed')
+}
+
 /** Keyword search over saved bookmarks (client-side; the server mirrors it). */
 export function searchBookmarks(posts: BookmarkPost[], query: string): BookmarkPost[] {
   const q = query.trim().toLowerCase()
@@ -169,13 +192,36 @@ export function filterByFolder(posts: BookmarkPost[], folderId: string): Bookmar
 /**
  * Citation-aware forge prompt: every generated angle must cite the specific
  * saves it draws on, so threads stay grounded in what was actually saved.
+ * Sources are grouped under their discovered themes when provided.
  */
-export function buildBookmarkForgePrompt(posts: BookmarkPost[], topic?: string): string {
+export function buildBookmarkForgePrompt(
+  posts: BookmarkPost[],
+  topic?: string,
+  themes?: BookmarkTheme[],
+): string {
   const subject = topic?.trim() || 'your saved bookmarks'
-  const saves = posts
-    .slice(0, 8)
-    .map(p => `- [${p.id}] @${p.username}: ${p.text}`)
-    .join('\n')
+  const sources = posts.slice(0, 8)
+  const byId = new Map(sources.map(p => [p.id, p]))
+  let saves: string
+  if (themes && themes.length > 0) {
+    const themed = new Set<string>()
+    const blocks = []
+    for (const t of themes) {
+      const members = (t.postIds || []).map(id => byId.get(id)).filter((p): p is BookmarkPost => !!p)
+      if (members.length === 0) continue
+      members.forEach(m => themed.add(m.id))
+      blocks.push(
+        `Theme: ${t.name}\n` + members.map(p => `- [${p.id}] @${p.username}: ${p.text}`).join('\n'),
+      )
+    }
+    const rest = sources.filter(p => !themed.has(p.id))
+    if (rest.length > 0) {
+      blocks.push(`More saves\n` + rest.map(p => `- [${p.id}] @${p.username}: ${p.text}`).join('\n'))
+    }
+    saves = blocks.join('\n\n')
+  } else {
+    saves = sources.map(p => `- [${p.id}] @${p.username}: ${p.text}`).join('\n')
+  }
   return `Generate exactly 5 thread/post ideas from these saved X posts ("${subject}").
 
 Saves:
@@ -202,6 +248,11 @@ Mix: at least one thread starter, one contrarian take, one curation roundup. No 
 export const FIXTURE_FOLDERS: BookmarkFolder[] = [
   { id: 'f-agents', name: 'Agents' },
   { id: 'f-craft', name: 'Craft' },
+]
+
+export const FIXTURE_THEMES: BookmarkTheme[] = [
+  { id: 't-agents', name: 'Agent loops', count: 3, postIds: ['201', '202', '206'], source: 'grok' },
+  { id: 't-craft', name: 'Curation & craft', count: 3, postIds: ['203', '204', '205'], source: 'grok' },
 ]
 
 export const FIXTURE_BOOKMARKS: BookmarkPost[] = [

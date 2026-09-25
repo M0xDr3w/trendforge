@@ -1,7 +1,6 @@
-import { Bookmark, FolderOpen, LogIn, LogOut, RefreshCw, Search } from 'lucide-react'
+import { Bookmark, FolderOpen, LogIn, LogOut, RefreshCw, Search, Shapes } from 'lucide-react'
 import { useMemo } from 'react'
-import type { BookmarkFolder, BookmarkPost } from '../lib/bookmarks'
-import { computeClusters } from '../lib/clusters'
+import type { BookmarkFolder, BookmarkPost, BookmarkTheme } from '../lib/bookmarks'
 import { HudLabel, NeoButton, Panel, FieldInput } from './ui'
 
 interface BookmarksPanelProps {
@@ -11,16 +10,21 @@ interface BookmarksPanelProps {
   demoMode: boolean
   posts: BookmarkPost[]
   folders: BookmarkFolder[]
+  themes: BookmarkTheme[]
   activeFolder: string
+  activeTheme: string
   query: string
   syncing: boolean
+  discovering: boolean
   lastSync: string | null
   citedIds: string[]
   forging: boolean
   onLogin: () => void
   onLogout: () => void
   onSync: () => void
+  onDiscoverThemes: () => void
   onFolderChange: (id: string) => void
+  onThemeChange: (id: string) => void
   onQueryChange: (q: string) => void
   onToggleCite: (id: string) => void
   onForgeFromBookmarks: () => void
@@ -33,48 +37,40 @@ export function BookmarksPanel({
   demoMode,
   posts,
   folders,
+  themes,
   activeFolder,
+  activeTheme,
   query,
   syncing,
+  discovering,
   lastSync,
   citedIds,
   forging,
   onLogin,
   onLogout,
   onSync,
+  onDiscoverThemes,
   onFolderChange,
+  onThemeChange,
   onQueryChange,
   onToggleCite,
   onForgeFromBookmarks,
 }: BookmarksPanelProps) {
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase()
+    const themeIds = activeTheme ? (themes.find(t => t.id === activeTheme)?.postIds || []) : null
     return posts.filter(p => {
       if (activeFolder && !(p.folderIds || []).includes(activeFolder)) return false
+      if (themeIds && !themeIds.includes(p.id)) return false
       if (!q) return true
       return (
         p.text.toLowerCase().includes(q) ||
         p.username.toLowerCase().includes(q)
       )
     })
-  }, [posts, activeFolder, query])
+  }, [posts, activeFolder, activeTheme, themes, query])
 
-  // Reuse the existing clustering engine: "what you've been saving about".
-  const themes = useMemo(
-    () =>
-      computeClusters(
-        visible.map(p => ({
-          id: Number(p.id.replace(/\D/g, '').slice(-9)) || p.id.length,
-          text: p.text,
-          username: p.username,
-          timestamp: p.createdAt,
-          likes: p.likes,
-          retweets: p.retweets,
-          sentiment: 0.2,
-        })),
-      ).slice(0, 3),
-    [visible],
-  )
+  const canDiscover = demoMode || signedIn
 
   return (
     <Panel glow padding="md">
@@ -132,6 +128,68 @@ export function BookmarksPanel({
         )}
       </div>
 
+      <div className="mb-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--input-bg)] p-2.5">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <HudLabel className="flex items-center gap-1.5 text-[10px]">
+            <Shapes size={12} aria-hidden /> Themes · discovered from your saves
+          </HudLabel>
+          {canDiscover && themes.length === 0 && (
+            <NeoButton
+              size="xs"
+              variant="ghost"
+              onClick={onDiscoverThemes}
+              disabled={discovering || posts.length === 0}
+              aria-label="Discover themes from saves"
+            >
+              {discovering ? 'Discovering…' : 'Discover themes'}
+            </NeoButton>
+          )}
+        </div>
+        {themes.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Discovered themes">
+            <NeoButton
+              size="xs"
+              variant={activeTheme === '' ? 'active' : 'ghost'}
+              onClick={() => onThemeChange('')}
+              role="tab"
+              aria-selected={activeTheme === ''}
+            >
+              All · {posts.length}
+            </NeoButton>
+            {themes.map(t => (
+              <NeoButton
+                key={t.id}
+                size="xs"
+                variant={activeTheme === t.id ? 'active' : 'ghost'}
+                onClick={() => onThemeChange(t.id)}
+                role="tab"
+                aria-selected={activeTheme === t.id}
+                title={`${t.count} saves · tap to filter posts`}
+              >
+                {t.name} · {t.count}
+              </NeoButton>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[12px] text-[var(--muted)]">
+            {signedIn || demoMode
+              ? 'No themes yet — sync saves, then discover the themes running through them. Labels are cached, so re-syncs only process new saves.'
+              : 'Sign in and sync to discover the themes running through your saves.'}
+          </p>
+        )}
+        {canDiscover && themes.length > 0 && (
+          <button
+            type="button"
+            onClick={onDiscoverThemes}
+            disabled={discovering}
+            className="mt-1.5 text-[11px] text-[var(--muted)] underline underline-offset-2 hover:text-[var(--text)]"
+            aria-label="Refresh theme discovery"
+          >
+            {discovering ? 'Discovering…' : 'Refresh themes'}
+          </button>
+        )}
+      </div>
+
       {folders.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5" role="tablist" aria-label="Bookmark folders">
           <NeoButton
@@ -141,7 +199,7 @@ export function BookmarksPanel({
             role="tab"
             aria-selected={activeFolder === ''}
           >
-            <FolderOpen size={12} aria-hidden /> All
+            <FolderOpen size={12} aria-hidden /> All folders
           </NeoButton>
           {folders.map(f => (
             <NeoButton
@@ -155,20 +213,6 @@ export function BookmarksPanel({
               {f.name}
             </NeoButton>
           ))}
-        </div>
-      )}
-
-      {themes.length > 0 && visible.length > 0 && (
-        <div className="mb-3 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--input-bg)] p-2.5">
-          <HudLabel className="mb-1 block text-[10px]">What you&apos;ve been saving about</HudLabel>
-          <ul className="space-y-0.5 text-[12px] text-[var(--text)]">
-            {themes.map(t => (
-              <li key={t.id}>
-                <span className="text-[var(--accent)]">{t.name}</span>
-                <span className="text-[var(--muted)]"> · {t.volume} save{t.volume === 1 ? '' : 's'}</span>
-              </li>
-            ))}
-          </ul>
         </div>
       )}
 

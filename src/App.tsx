@@ -5,12 +5,15 @@ import { config } from './lib/config'
 import { loadAppToken, saveAppToken } from './lib/accessToken'
 import {
   buildBookmarkForgePrompt,
+  discoverThemes as discoverBookmarkThemes,
   fetchBookmarks,
   fetchDigest,
+  fetchThemes,
   filterByFolder,
   FIXTURE_BOOKMARKS,
   FIXTURE_DIGEST,
   FIXTURE_FOLDERS,
+  FIXTURE_THEMES,
   generateDigest,
   getAuthStatus,
   logout as logoutSession,
@@ -20,6 +23,7 @@ import {
   syncBookmarks,
   type BookmarkFolder,
   type BookmarkPost,
+  type BookmarkTheme,
   type WeeklyDigest,
 } from './lib/bookmarks'
 import { computeClusters, buildVolumeSnapshot } from './lib/clusters'
@@ -112,9 +116,12 @@ function App() {
   const [authUser, setAuthUser] = useState<string | null>(null)
   const [bookmarkPosts, setBookmarkPosts] = useState<BookmarkPost[]>([])
   const [bookmarkFolders, setBookmarkFolders] = useState<BookmarkFolder[]>([])
+  const [bookmarkThemes, setBookmarkThemes] = useState<BookmarkTheme[]>([])
   const [activeFolder, setActiveFolder] = useState('')
+  const [activeTheme, setActiveTheme] = useState('')
   const [bmQuery, setBmQuery] = useState('')
   const [syncingBm, setSyncingBm] = useState(false)
+  const [discoveringBm, setDiscoveringBm] = useState(false)
   const [lastBmSync, setLastBmSync] = useState<string | null>(null)
   const [digest, setDigest] = useState<WeeklyDigest | null>(null)
   const [digestLoading, setDigestLoading] = useState(false)
@@ -200,6 +207,7 @@ function App() {
     if (demoBookmarks) {
       setBookmarkPosts(FIXTURE_BOOKMARKS)
       setBookmarkFolders(FIXTURE_FOLDERS)
+      setBookmarkThemes(FIXTURE_THEMES)
       setDigest(FIXTURE_DIGEST)
       setLastBmSync(new Date().toISOString())
       setAuthChecking(false)
@@ -221,6 +229,12 @@ function App() {
             }
           } catch {
             // Stay signed in; the panel shows the empty state with hints.
+          }
+          try {
+            const snapshot = await fetchThemes()
+            if (!cancelled) setBookmarkThemes(snapshot.themes)
+          } catch {
+            // No themes yet — the panel offers discovery.
           }
           try {
             const d = await fetchDigest()
@@ -254,6 +268,16 @@ function App() {
       toast.success(`Synced bookmarks`, {
         description: `${result.newPosts} new · ${result.total} total · $${result.costPerPostUsd ?? 0.001}/post spend-tracked`,
       })
+      // Fold new saves into themes: cached labels keep this to one small
+      // Grok call covering only genuinely new clusters.
+      if (bookmarkThemes.length > 0 && result.newPosts > 0) {
+        try {
+          const snapshot = await discoverBookmarkThemes()
+          setBookmarkThemes(snapshot.themes)
+        } catch {
+          // Themes refresh is best-effort; the panel keeps the old snapshot.
+        }
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Bookmark sync failed', {
         description: (err as { hint?: string })?.hint,
@@ -262,7 +286,7 @@ function App() {
     } finally {
       setSyncingBm(false)
     }
-  }, [demoBookmarks])
+  }, [demoBookmarks, bookmarkThemes.length])
 
   const handleBmLogout = useCallback(async () => {
     try {
@@ -272,10 +296,38 @@ function App() {
     setAuthUser(null)
     setBookmarkPosts([])
     setBookmarkFolders([])
+    setBookmarkThemes([])
+    setActiveTheme('')
     setDigest(null)
     setCitedIds([])
     toast.info('Signed out — server session destroyed')
   }, [])
+
+  const runDiscoverThemes = useCallback(async () => {
+    if (demoBookmarks) {
+      toast.info('Demo mode — fixture themes only')
+      return
+    }
+    setDiscoveringBm(true)
+    try {
+      const snapshot = await discoverBookmarkThemes()
+      setBookmarkThemes(snapshot.themes)
+      const fresh = snapshot.themes.length - snapshot.grokLabeled
+      toast.success(`Discovered ${snapshot.themes.length} themes`, {
+        description:
+          snapshot.grokLabeled > 0
+            ? `${snapshot.grokLabeled} Grok-named · labels cached, re-syncs stay cheap`
+            : `${fresh} heuristic-named (Grok unavailable) · cached for next time`,
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Theme discovery failed', {
+        description: (err as { hint?: string })?.hint,
+        duration: 8000,
+      })
+    } finally {
+      setDiscoveringBm(false)
+    }
+  }, [demoBookmarks])
 
   const handleToggleCite = useCallback((id: string) => {
     setCitedIds(prev => (prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id].slice(0, 8)))
@@ -470,7 +522,11 @@ function App() {
   const handleBookmarkForge = useCallback(async () => {
     if (forgeInFlightRef.current || bmForging) return
     const pool = filterByFolder(bookmarkPosts, activeFolder)
-    const searched = searchBookmarks(pool, bmQuery)
+    const themeIds = activeTheme
+      ? (bookmarkThemes.find(t => t.id === activeTheme)?.postIds || [])
+      : null
+    const themed = themeIds ? pool.filter(p => themeIds.includes(p.id)) : pool
+    const searched = searchBookmarks(themed, bmQuery)
     const cited = searched.filter(p => citedIds.includes(p.id))
     const sources = (cited.length > 0 ? cited : searched).slice(0, 8)
     if (sources.length === 0) {
@@ -481,7 +537,7 @@ function App() {
     setBmForging(true)
     setLlmLoading(true)
     try {
-      const prompt = buildBookmarkForgePrompt(sources)
+      const prompt = buildBookmarkForgePrompt(sources, undefined, bookmarkThemes)
       const response = await callForgeLlm(defaultsForProvider('grok').url, prompt, {
         stream: false,
         apiKey: forgeApiKey,
@@ -499,7 +555,7 @@ function App() {
       setBmForging(false)
       forgeInFlightRef.current = false
     }
-  }, [bookmarkPosts, activeFolder, bmQuery, citedIds, bmForging, forgeApiKey, forgeModel, commitForgeResult])
+  }, [bookmarkPosts, activeFolder, activeTheme, bookmarkThemes, bmQuery, citedIds, bmForging, forgeApiKey, forgeModel, commitForgeResult])
 
   const forge = useCallback(async () => {
     // Block re-entry so rapid taps can't launch overlapping LLM requests.
@@ -1008,16 +1064,21 @@ Tags: trendforge,signals,forge`).catch(() => {})
               demoMode={demoBookmarks}
               posts={bookmarkPosts}
               folders={bookmarkFolders}
+              themes={bookmarkThemes}
               activeFolder={activeFolder}
+              activeTheme={activeTheme}
               query={bmQuery}
               syncing={syncingBm}
+              discovering={discoveringBm}
               lastSync={lastBmSync}
               citedIds={citedIds}
               forging={bmForging}
               onLogin={startLogin}
               onLogout={handleBmLogout}
               onSync={handleBmSync}
+              onDiscoverThemes={runDiscoverThemes}
               onFolderChange={setActiveFolder}
+              onThemeChange={setActiveTheme}
               onQueryChange={setBmQuery}
               onToggleCite={handleToggleCite}
               onForgeFromBookmarks={handleBookmarkForge}

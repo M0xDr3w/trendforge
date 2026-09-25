@@ -11,6 +11,7 @@ import {
   callXai,
   digestKey,
   kvConfigured,
+  themesKey,
 } from './_lib/spend.js'
 
 function parsePost(value) {
@@ -106,13 +107,17 @@ export default async function handler(req, res) {
     })
   }
 
+  // Organize the brief around discovered themes when present.
+  const snapshot = await kv.get(themesKey(uid)).catch(() => null)
+  const themes = Array.isArray(snapshot?.themes) ? snapshot.themes : []
+
   let text
   try {
     text = await callXai({
       apiKey,
       model: resolveForgeModel(req.body?.model),
       system: 'You are a SpaceXAI briefing writer. Reply in Markdown.',
-      user: buildDigestPrompt(posts),
+      user: buildDigestPrompt(posts, themes),
       maxTokens: clampMaxTokens(req.body?.max_tokens ?? 900),
     })
   } catch (err) {

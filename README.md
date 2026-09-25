@@ -160,13 +160,20 @@ Relevant environment variables (all server-side, set in Vercel or `vercel dev`):
 - **Sync** pulls `GET /2/users/:id/bookmarks` (100/page, paginated) plus bookmark folders, dedupes
   into KV by post id, and charges the shared monthly spend cap (`$0.001`/post when you own the
   developer app, `$0.005` otherwise). Re-syncs only fetch what's new where possible.
-- **Themes** reuse the existing clustering engine over your saves (by folder and overall).
+- **Themes** are discovered from the saves themselves — no folders required (folders still
+  supported as a filter). `POST /api/themes` clusters the pile locally (free, deterministic),
+  then makes **one** batched Grok call that names new clusters and places ungrouped saves
+  (joining existing themes where they fit). Names are cached in KV by cluster signature, so
+  re-syncs only spend Grok tokens on genuinely new clusters; everything else resolves from
+  cache. Each theme carries a name, a count, and links to its posts — tap a theme to filter.
 - **Search** your saves by keyword; append `?ask=` on `/api/bookmarks` for Grok-assisted relevance
   ranking (needs `XAI_API_KEY`).
 - **Weekly brief**: view in the Digest panel, generate on demand, or let the Monday Vercel Cron
-  (`/api/cron/weekly-digest`, guarded by `CRON_SECRET`) refresh it. In-app only — no email.
-- **Forge from saves**: cite specific posts, generate thread/post ideas that reference them, keep the
-  accept/edit/reject learn loop and Markdown/JSON export. TrendForge **never** posts to X.
+  (`/api/cron/weekly-digest`, guarded by `CRON_SECRET`) refresh it — organized around the
+  discovered themes. In-app only — no email.
+- **Forge from saves**: cite specific posts, generate thread/post ideas that reference them,
+  grouped by theme, keeping the accept/edit/reject learn loop and Markdown/JSON export.
+  TrendForge **never** posts to X.
 - A valid X session also gates `/api/forge-chat` and `/api/x-search`: signed-in callers skip the
   per-IP rate bucket (origin check + spend cap still apply to everyone).
 - Demo without keys: open the app with `?demo=bookmarks` for clearly badged fixture bookmarks,

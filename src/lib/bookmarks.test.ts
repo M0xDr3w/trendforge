@@ -5,6 +5,7 @@ import {
   FIXTURE_BOOKMARKS,
   FIXTURE_DIGEST,
   FIXTURE_FOLDERS,
+  FIXTURE_THEMES,
   mergeBookmarks,
   searchBookmarks,
   type BookmarkPost,
@@ -74,5 +75,31 @@ describe('fixtures', () => {
     expect(FIXTURE_FOLDERS.length).toBeGreaterThan(0)
     expect(FIXTURE_DIGEST.text).toContain('[201]')
     expect(FIXTURE_DIGEST.text).toContain('[@sample_ledger]')
+  })
+
+  it('covers every fixture save with a named theme', () => {
+    const covered = new Set(FIXTURE_THEMES.flatMap(t => t.postIds))
+    for (const p of FIXTURE_BOOKMARKS) {
+      expect(covered.has(p.id)).toBe(true)
+    }
+    for (const t of FIXTURE_THEMES) {
+      expect(t.name.length).toBeGreaterThan(0)
+      expect(t.count).toBe(t.postIds.length)
+    }
+  })
+})
+
+describe('buildBookmarkForgePrompt with themes', () => {
+  it('groups sources under theme headings', () => {
+    const prompt = buildBookmarkForgePrompt(FIXTURE_BOOKMARKS, undefined, FIXTURE_THEMES)
+    expect(prompt).toContain('Theme: Agent loops')
+    expect(prompt).toContain('Theme: Curation & craft')
+    expect(prompt).toContain('MUST cite')
+  })
+
+  it('works without themes', () => {
+    const prompt = buildBookmarkForgePrompt(FIXTURE_BOOKMARKS.slice(0, 2))
+    expect(prompt).not.toContain('Theme:')
+    expect(prompt).toContain('@sample_atlas')
   })
 })

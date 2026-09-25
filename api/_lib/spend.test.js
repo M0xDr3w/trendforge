@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { chargeSpend, monthKey } from './spend.js'
+import { buildDigestPrompt, chargeSpend, monthKey } from './spend.js'
 
 function memKv() {
   const store = new Map()
@@ -45,5 +45,27 @@ describe('chargeSpend', () => {
     expect(await kv.get(monthKey())).toBeNull()
     await chargeSpend({ kv, reads: 100, costPerPostUsd: 0.001 })
     expect(await kv.get(monthKey())).toBe(10)
+  })
+})
+
+describe('buildDigestPrompt', () => {
+  const posts = [
+    { id: '1', username: 'sample_a', text: 'agent loops' },
+    { id: '2', username: 'sample_b', text: 'sourdough starter' },
+  ]
+  it('organizes saves under theme headings', () => {
+    const prompt = buildDigestPrompt(posts, [
+      { name: 'Agents', postIds: ['1'] },
+      { name: 'Baking', postIds: ['2'] },
+    ])
+    expect(prompt).toContain('### Agents (1)')
+    expect(prompt).toContain('[1] @sample_a')
+    expect(prompt).toContain('### Baking (1)')
+  })
+
+  it('lists unthemed saves separately and works without themes', () => {
+    const prompt = buildDigestPrompt(posts, [{ name: 'Agents', postIds: ['1'] }])
+    expect(prompt).toContain('### More saves (1)')
+    expect(buildDigestPrompt(posts)).toContain('[2] @sample_b')
   })
 })
