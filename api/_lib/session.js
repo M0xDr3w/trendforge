@@ -96,6 +96,28 @@ export function requireSessionSecret() {
   return secret
 }
 
+/**
+ * Owner-only sign-in lock. Comma-separated numeric X user ids. Returns the
+ * allow set, or null when unset/empty — null means OPEN (any X account may
+ * sign in). Whitespace and empty entries are ignored.
+ */
+export function parseAllowedUserIds() {
+  const raw = String(process.env.X_ALLOWED_USER_IDS || '')
+  const ids = raw
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+  return ids.length > 0 ? new Set(ids) : null
+}
+
+/** True when the X user may hold a session (always true when no lock). */
+export function isUserAllowed(xUserId) {
+  const allow = parseAllowedUserIds()
+  if (!allow) return true
+  const id = String(xUserId ?? '').trim()
+  return id.length > 0 && allow.has(id)
+}
+
 export function encryptTokens(secret, obj) {
   const key = keyFromSecret(secret)
   const iv = crypto.randomBytes(12)

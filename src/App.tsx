@@ -253,6 +253,33 @@ function App() {
     }
   }, [demoBookmarks])
 
+  // Surface OAuth redirect outcomes (?auth=ok|denied|private), then strip
+  // the parameter so refreshes don't re-toast.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const auth = params.get('auth')
+      if (!auth) return
+      if (auth === 'ok') toast.success('Signed in with X')
+      else if (auth === 'denied') toast.info('Sign-in cancelled at X')
+      else if (auth === 'private') {
+        toast.error('This TrendForge instance is private', {
+          description: 'The owner limits access to approved X accounts.',
+          duration: 8000,
+        })
+      }
+      params.delete('auth')
+      const query = params.toString()
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+      )
+    } catch {
+      // Non-browser or history unavailable — the panel states stand alone.
+    }
+  }, [])
+
   const handleBmSync = useCallback(async () => {
     if (demoBookmarks) {
       toast.info('Demo mode — fixtures only, no X sync')

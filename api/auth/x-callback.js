@@ -8,6 +8,7 @@ import {
   decryptTokens,
   encryptTokens,
   getSessionId,
+  isUserAllowed,
   newSessionId,
   pkceKey,
   publicBaseUrl,
@@ -15,7 +16,7 @@ import {
   sessionKey,
   setSessionCookie,
 } from '../_lib/session.js'
-import { exchangeCode, fetchMe } from '../_lib/xapi.js'
+import { exchangeCode, fetchMe, revokeToken } from '../_lib/xapi.js'
 
 export default async function handler(req, res) {
   const { code, state, error } = req.query || {}
@@ -77,6 +78,22 @@ export default async function handler(req, res) {
     me = await fetchMe(tokens.access_token)
   } catch {
     me = null
+  }
+
+  // Owner-only lock: when X_ALLOWED_USER_IDS is set, only listed X user ids
+  // may sign in. Refused logins store nothing — the fresh tokens are revoked
+  // best-effort (failures ignored) and the browser is sent home with a
+  // message the UI shows. An unknown id fails closed while the lock is on.
+  if (!isUserAllowed(me?.id)) {
+    for (const token of [tokens.access_token, tokens.refresh_token]) {
+      try {
+        await revokeToken({ clientId, clientSecret, token })
+      } catch {
+        // Revocation is hygiene; never storing the tokens is the guarantee.
+      }
+    }
+    clearSessionCookie(req, res)
+    return res.redirect(302, `${home}?auth=private`)
   }
 
   // Always mint a fresh session id on login (fixation defense): if the

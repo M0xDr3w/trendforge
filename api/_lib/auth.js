@@ -7,6 +7,7 @@ import {
   decryptTokens,
   encryptTokens,
   getSessionId,
+  isUserAllowed,
   requireSessionSecret,
   sessionKey,
   SESSION_TTL_SEC,
@@ -83,7 +84,7 @@ export async function refreshSessionTokens({ sid, secret, bundle }) {
   } catch (err) {
     if (err?.status === 400) {
       await destroySession(sid)
-      return { ok: false, code: 'session_expired', error: 'X revoked access — sign in again' }
+      return { ok: false, code: 'session_expired', status: 401, error: 'X revoked access — sign in again' }
     }
     // Transient refresh failure: proceed with the stale token once.
     return { bundle, refreshed: false }
@@ -95,27 +96,27 @@ export async function refreshSessionTokens({ sid, secret, bundle }) {
 export async function loadSession(req) {
   const sid = getSessionId(req)
   if (!sid) {
-    return { ok: false, code: 'not_signed_in', error: 'Not signed in with X' }
+    return { ok: false, code: 'not_signed_in', status: 401, error: 'Not signed in with X' }
   }
   const secret = requireSessionSecret()
   if (!secret) {
-    return { ok: false, code: 'oauth_not_configured', error: 'SESSION_SECRET not configured' }
+    return { ok: false, code: 'oauth_not_configured', status: 500, error: 'SESSION_SECRET not configured' }
   }
   let sealed
   try {
     sealed = await kv.get(sessionKey(sid))
   } catch {
-    return { ok: false, code: 'session_store_failed', error: 'Session store unreachable' }
+    return { ok: false, code: 'session_store_failed', status: 500, error: 'Session store unreachable' }
   }
   if (!sealed) {
-    return { ok: false, code: 'not_signed_in', error: 'Session expired — sign in again' }
+    return { ok: false, code: 'not_signed_in', status: 401, error: 'Session expired — sign in again' }
   }
   let bundle
   try {
     bundle = decryptTokens(secret, sealed)
   } catch {
     await destroySession(sid)
-    return { ok: false, code: 'not_signed_in', error: 'Session invalid — sign in again' }
+    return { ok: false, code: 'not_signed_in', status: 401, error: 'Session invalid — sign in again' }
   }
 
   // Refresh once when stale (60s skew). Missing refresh token => keep going;
@@ -139,12 +140,26 @@ export async function loadSession(req) {
     }
   }
 
+  // Owner-only lock: sessions minted before the lock (or with an unknown
+  // id) stop working on paid routes the moment the allowlist excludes them.
+  if (!isUserAllowed(bundle.xUserId)) {
+    return {
+      ok: false,
+      code: 'user_not_allowed',
+      status: 403,
+      error: 'This TrendForge instance is private to its owner',
+    }
+  }
+
   return { ok: true, sid, bundle }
 }
 
 export function sessionHint(code) {
   if (code === 'not_signed_in' || code === 'session_expired') {
     return 'Sign in with X in the Bookmark Forge panel, then retry.'
+  }
+  if (code === 'user_not_allowed') {
+    return 'The owner limits this instance to approved X accounts (X_ALLOWED_USER_IDS).'
   }
   if (code === 'oauth_not_configured') {
     return 'Set X_CLIENT_ID, X_CLIENT_SECRET, SESSION_SECRET, and KV vars in Vercel env. See SETUP.md.'

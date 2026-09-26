@@ -5,6 +5,8 @@ import {
   encryptTokens,
   getSessionId,
   isKnownSession,
+  isUserAllowed,
+  parseAllowedUserIds,
   parseCookies,
   pkceKey,
   publicBaseUrl,
@@ -64,6 +66,37 @@ describe('publicBaseUrl', () => {
   it('falls back to request headers', () => {
     delete process.env.APP_BASE_URL
     expect(publicBaseUrl(req)).toBe('https://preview-1.vercel.app')
+  })
+})
+
+describe('owner-only sign-in lock', () => {
+  it('is open when unset or empty', () => {
+    delete process.env.X_ALLOWED_USER_IDS
+    expect(parseAllowedUserIds()).toBeNull()
+    expect(isUserAllowed('999')).toBe(true)
+    process.env.X_ALLOWED_USER_IDS = '   '
+    expect(parseAllowedUserIds()).toBeNull()
+    expect(isUserAllowed(undefined)).toBe(true)
+    delete process.env.X_ALLOWED_USER_IDS
+  })
+
+  it('allows listed ids and rejects the rest', () => {
+    process.env.X_ALLOWED_USER_IDS = '42'
+    expect(isUserAllowed('42')).toBe(true)
+    expect(isUserAllowed(42)).toBe(true)
+    expect(isUserAllowed(' 42 ')).toBe(true)
+    expect(isUserAllowed('43')).toBe(false)
+    expect(isUserAllowed(undefined)).toBe(false)
+    expect(isUserAllowed('')).toBe(false)
+    delete process.env.X_ALLOWED_USER_IDS
+  })
+
+  it('ignores whitespace and empty entries', () => {
+    process.env.X_ALLOWED_USER_IDS = ' 42 ,, 43,'
+    expect(parseAllowedUserIds()).toEqual(new Set(['42', '43']))
+    expect(isUserAllowed('43')).toBe(true)
+    expect(isUserAllowed('')).toBe(false)
+    delete process.env.X_ALLOWED_USER_IDS
   })
 })
 

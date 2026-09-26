@@ -101,7 +101,7 @@ export default async function handler(req, res) {
 
   const session = await loadSession(req)
   if (!session.ok) {
-    const status = session.code === 'session_store_failed' ? 500 : 401
+    const status = session.status ?? 500
     return res.status(status).json({
       error: session.error,
       code: session.code,

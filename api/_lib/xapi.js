@@ -65,6 +65,29 @@ export async function fetchMe(accessToken) {
   return body?.data
 }
 
+/**
+ * Best-effort OAuth2 token revocation (RFC 7009-style). Used to discard
+ * tokens that must never be stored (e.g. sign-in refused by the owner
+ * lock). Failures are the caller's to ignore — dropping the token without
+ * storing it is the real guarantee.
+ */
+export async function revokeToken({ clientId, clientSecret, token }) {
+  if (!token) return
+  const res = await fetch(`${X_API_BASE}/oauth2/revoke`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${basicAuth(clientId, clientSecret)}`,
+    },
+    body: new URLSearchParams({ token }).toString(),
+  })
+  if (!res.ok) {
+    const err = new Error(`X revoke returned ${res.status}`)
+    err.status = res.status
+    throw err
+  }
+}
+
 export function mapBookmarkTweet(tweet, usersById) {
   const user = usersById.get(tweet.author_id) || {}
   return {

@@ -110,6 +110,7 @@ beforeEach(() => {
   process.env.KV_REST_API_TOKEN = 'kv-token'
   delete process.env.DIGEST_SESS_PER_HOUR
   delete process.env.APP_ACCESS_TOKEN
+  delete process.env.X_ALLOWED_USER_IDS
   globalThis.fetch = realFetch
 })
 
@@ -173,5 +174,30 @@ describe('digest GET', () => {
     await handler(req('GET'), hit)
     expect(hit.statusCode).toBe(200)
     expect(hit.body.text).toBe('old')
+  })
+})
+
+describe('owner-only lock on paid routes', () => {
+  it('returns 403 for a session whose id is no longer allowed', async () => {
+    process.env.X_ALLOWED_USER_IDS = '42'
+    seed()
+    // Session belongs to u1, which is not on the list.
+    mockBrief()
+    const res = resMock()
+    await handler(req(), res)
+    expect(res.statusCode).toBe(403)
+    expect(res.body.code).toBe('user_not_allowed')
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    delete process.env.X_ALLOWED_USER_IDS
+  })
+
+  it('lets the listed owner through', async () => {
+    process.env.X_ALLOWED_USER_IDS = 'u1'
+    seed()
+    mockBrief()
+    const res = resMock()
+    await handler(req(), res)
+    expect(res.statusCode).toBe(200)
+    delete process.env.X_ALLOWED_USER_IDS
   })
 })
