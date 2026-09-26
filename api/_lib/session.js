@@ -36,6 +36,16 @@ export function getSessionId(req) {
   return parseCookies(req)[SESSION_COOKIE] || ''
 }
 
+/** True when the session id names a live KV record (never throws). */
+export async function isKnownSession(kv, sid) {
+  if (!sid || !kv) return false
+  try {
+    return !!(await kv.get(sessionKey(sid)))
+  } catch {
+    return false
+  }
+}
+
 export function newSessionId() {
   return crypto.randomBytes(24).toString('base64url')
 }

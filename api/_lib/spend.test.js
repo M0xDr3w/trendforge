@@ -11,6 +11,10 @@ function memKv() {
       store.set(k, (store.get(k) || 0) + n)
       return store.get(k)
     },
+    async decrby(k, n) {
+      store.set(k, (store.get(k) || 0) - n)
+      return store.get(k)
+    },
   }
 }
 
@@ -25,17 +29,20 @@ describe('monthKey', () => {
 })
 
 describe('chargeSpend', () => {
-  it('charges actuals and blocks over the cap', async () => {
+  it('records and blocks over the cap, rolling back the rejected increment', async () => {
     process.env.X_SPEND_CAP_USD = '0.05'
     const kv = memKv()
-    // 30 reads × $0.001 = $0.03 → ok
+    // 30 reads × $0.001 = $0.03 → ok, recorded
     await expect(chargeSpend({ kv, reads: 30, costPerPostUsd: 0.001 })).resolves.toMatchObject({
       ok: true,
     })
-    // another $0.03 would exceed the $0.05 cap
+    expect(await kv.get(monthKey())).toBe(3)
+    // another $0.03 would exceed the $0.05 cap → rejected AND rolled back
     const blocked = await chargeSpend({ kv, reads: 30, costPerPostUsd: 0.001 })
     expect(blocked.ok).toBe(false)
+    expect(blocked.code).toBe('spend_cap')
     expect(blocked.capUsd).toBe(0.05)
+    expect(await kv.get(monthKey())).toBe(3)
   })
 
   it('dryRun checks without incrementing', async () => {
@@ -45,6 +52,36 @@ describe('chargeSpend', () => {
     expect(await kv.get(monthKey())).toBeNull()
     await chargeSpend({ kv, reads: 100, costPerPostUsd: 0.001 })
     expect(await kv.get(monthKey())).toBe(10)
+  })
+
+  it('force mode always records actuals, flagging over-cap', async () => {
+    process.env.X_SPEND_CAP_USD = '0.01'
+    const kv = memKv()
+    // $0.03 of reads already happened: recorded, flagged
+    const result = await chargeSpend({ kv, reads: 30, costPerPostUsd: 0.001, force: true })
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('spend_cap')
+    expect(await kv.get(monthKey())).toBe(3)
+  })
+
+  it('reports store failure instead of throwing', async () => {
+    const kv = {
+      async get() {
+        throw new Error('kv down')
+      },
+      async incrby() {
+        throw new Error('kv down')
+      },
+      async decrby() {
+        throw new Error('kv down')
+      },
+    }
+    await expect(
+      chargeSpend({ kv, reads: 10, costPerPostUsd: 0.001, dryRun: true }),
+    ).resolves.toMatchObject({ ok: false, code: 'spend_store_failed' })
+    await expect(
+      chargeSpend({ kv, reads: 10, costPerPostUsd: 0.001 }),
+    ).resolves.toMatchObject({ ok: false, code: 'spend_store_failed' })
   })
 })
 

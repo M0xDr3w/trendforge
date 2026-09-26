@@ -26,7 +26,7 @@ import {
   resolveForgeModel,
   validateMessages,
 } from './_lib/guard.js'
-import { getSessionId, sessionKey } from './_lib/session.js'
+import { getSessionId, isKnownSession } from './_lib/session.js'
 
 const XAI_CHAT_URL = 'https://api.x.ai/v1/chat/completions'
 const UPSTREAM_TIMEOUT_MS = 55_000
@@ -77,30 +77,23 @@ export default async function handler(req, res) {
   }
 
   const { limit, windowSec } = rateLimitConfig('FORGE_CHAT', 30, 3600)
-  // Signed-in X sessions carry their own trust: skip the per-IP bucket.
-  let forgeAuthed = false
+  const { limit: sessLimit, windowSec: sessWindow } = rateLimitConfig('FORGE_CHAT_SESS', 120, 3600)
+  // Signed-in callers get their own session-scoped bucket (generous, still
+  // bounded); anonymous callers share the per-IP bucket.
   const forgeSid = getSessionId(req)
-  if (forgeSid && kvConfigured()) {
-    try {
-      forgeAuthed = !!(await kv.get(sessionKey(forgeSid)))
-    } catch {
-      forgeAuthed = false
-    }
-  }
-  const rate = forgeAuthed
-    ? { allowed: true, remaining: limit }
-    : await checkRateLimit({
-        kv: kvConfigured() ? kv : null,
-        prefix: 'forge:ratelimit',
-        ip: getClientIp(req),
-        limit,
-        windowSec,
-      })
+  const forgeAuthed = await isKnownSession(kvConfigured() ? kv : null, forgeSid)
+  const rate = await checkRateLimit({
+    kv: kvConfigured() ? kv : null,
+    prefix: forgeAuthed ? 'forge:ratelimit:sess' : 'forge:ratelimit',
+    ip: forgeAuthed ? forgeSid : getClientIp(req),
+    limit: forgeAuthed ? sessLimit : limit,
+    windowSec: forgeAuthed ? sessWindow : windowSec,
+  })
   if (!rate.allowed) {
     return sendJson(res, 429, {
       error: 'Forge rate limit exceeded',
       code: 'forge_rate_limit',
-      hint: `Too many forge requests from your network. Limit is ${limit}/hour — wait and retry.`,
+      hint: `Too many forge requests${forgeAuthed ? ' on this session' : ' from your network'}. Limit is ${forgeAuthed ? sessLimit : limit}/hour — wait and retry.`,
     })
   }
 

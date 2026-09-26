@@ -4,6 +4,7 @@ import {
   decryptTokens,
   encryptTokens,
   getSessionId,
+  isKnownSession,
   parseCookies,
   pkceKey,
   sessionKey,
@@ -49,5 +50,28 @@ describe('key helpers', () => {
   it('namespaces pkce and session keys', () => {
     expect(pkceKey('s')).toBe('tf:pkce:s')
     expect(sessionKey('s')).toBe('tf:sess:s')
+  })
+})
+
+describe('isKnownSession', () => {
+  const memKv = records => ({
+    async get(k) {
+      return records[k] ?? null
+    },
+  })
+  it('recognizes live sessions and rejects the rest', async () => {
+    const kv = memKv({ 'tf:sess:live': { sealed: true } })
+    await expect(isKnownSession(kv, 'live')).resolves.toBe(true)
+    await expect(isKnownSession(kv, 'gone')).resolves.toBe(false)
+    await expect(isKnownSession(kv, '')).resolves.toBe(false)
+    await expect(isKnownSession(null, 'live')).resolves.toBe(false)
+  })
+  it('fails closed on store errors', async () => {
+    const kv = {
+      async get() {
+        throw new Error('kv down')
+      },
+    }
+    await expect(isKnownSession(kv, 'live')).resolves.toBe(false)
   })
 })

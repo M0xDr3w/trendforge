@@ -21,26 +21,57 @@ export function kvConfigured() {
 }
 
 /**
- * Preflight + charge for N reads at costPerPostUsd. Returns
- * { ok: true } or { ok: false, capUsd, period } when the cap blocks.
- * With dryRun, checks without incrementing (preflight before an X call).
+ * Spend accounting against the shared monthly cap.
+ *
+ * - dryRun: read-only preflight. True when the remaining budget covers
+ *   `reads`, without recording anything.
+ * - default: atomic check-and-record. incrby first; when the new total
+ *   exceeds the cap, decrby rolls back and the call is rejected. Concurrent
+ *   overshoot is bounded to one increment each (use Lua for strictness).
+ * - force: record-actuals mode for reads that already happened (the X call
+ *   is sunk). Always increments; reports ok:false when now over the cap so
+ *   callers can flag it instead of dropping data.
  */
-export async function chargeSpend({ kv, reads, costPerPostUsd, dryRun = false }) {
+export async function chargeSpend({ kv, reads, costPerPostUsd, dryRun = false, force = false }) {
   const key = monthKey()
   const capCents = spendCapCents()
+  const capUsd = capCents / 100
+  const period = key.split(':')[1]
   const planned = Math.ceil(reads * costPerPostUsd * 100)
-  const current = Number((await kv.get(key)) || 0) || 0
-  if (current + planned > capCents) {
-    return { ok: false, capUsd: capCents / 100, period: key.split(':')[1] }
-  }
-  if (planned > 0 && !dryRun) {
+
+  if (dryRun) {
+    let current = 0
     try {
-      await kv.incrby(key, planned)
+      current = Number((await kv.get(key)) || 0) || 0
     } catch {
-      // Non-fatal: the preflight above already gated this request.
+      return { ok: false, code: 'spend_store_failed', capUsd, period }
     }
+    if (current + planned > capCents) {
+      return { ok: false, code: 'spend_cap', capUsd, period }
+    }
+    return { ok: true, capUsd, period }
   }
-  return { ok: true }
+
+  if (planned <= 0) return { ok: true, capUsd, period }
+
+  let total = 0
+  try {
+    total = Number(await kv.incrby(key, planned)) || 0
+  } catch {
+    return { ok: false, code: 'spend_store_failed', capUsd, period }
+  }
+
+  if (total > capCents) {
+    if (!force) {
+      try {
+        await kv.decrby(key, planned)
+      } catch {
+        // Rollback failed: the preflight on the next call still gates spend.
+      }
+    }
+    return { ok: false, code: 'spend_cap', capUsd, period, totalCents: total }
+  }
+  return { ok: true, capUsd, period, totalCents: total }
 }
 
 export function bookmarksKey(uid) {

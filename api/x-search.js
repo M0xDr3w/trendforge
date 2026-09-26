@@ -10,17 +10,11 @@ import {
   isAllowedOrigin,
   rateLimitConfig,
 } from './_lib/guard.js'
-import { getSessionId, sessionKey } from './_lib/session.js'
+import { getSessionId, isKnownSession } from './_lib/session.js'
+import { chargeSpend } from './_lib/spend.js'
 
 function sendError(res, status, code, error, hint) {
   return res.status(status).json({ error, code, hint })
-}
-
-function monthKey(base = 'xapi:spend_cents') {
-  const d = new Date()
-  const yyyy = d.getUTCFullYear()
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${base}:${yyyy}-${mm}`
 }
 
 function parseUsdEnv(name, fallbackNumber) {
@@ -143,11 +137,7 @@ export default async function handler(req, res) {
   }
 
   // Hard monthly spend cap (default $20). Requires Vercel KV.
-  const capUsd = parseUsdEnv('X_SPEND_CAP_USD', 20)
   const perPostUsd = parseUsdEnv('X_POST_COST_USD', 0.005) // ~ $0.005 per post read
-  const plannedPosts = mr
-  const plannedCents = Math.ceil(plannedPosts * perPostUsd * 100)
-  const capCents = Math.round(capUsd * 100)
 
   // KV is required to enforce the cap in production.
   const kvConfigured =
@@ -163,48 +153,47 @@ export default async function handler(req, res) {
     )
   }
 
-  const key = monthKey()
-  // A valid X session is its own gate: signed-in callers skip the per-IP
-  // bucket (the shared monthly spend cap below still applies to everyone).
-  let authed = false
+  // Signed-in callers get their own generous session-scoped bucket instead
+  // of skipping rate limiting; anonymous callers share the per-IP bucket.
+  // Either way the shared monthly spend cap below still applies.
   const sid = getSessionId(req)
-  if (sid && kvConfigured) {
-    try {
-      authed = !!(await kv.get(sessionKey(sid)))
-    } catch {
-      authed = false
-    }
-  }
-  // Per-IP rate limit sits in front of the shared spend cap so one abusive
-  // network can't burn the owner's whole monthly budget.
-  const { limit: searchLimit, windowSec: searchWindow } = rateLimitConfig('X_SEARCH', 60, 3600)
-  const rate = authed
-    ? { allowed: true, remaining: searchLimit }
-    : await checkRateLimit({
-        kv: kvConfigured ? kv : null,
-        prefix: 'xapi:ratelimit',
-        ip: getClientIp(req),
-        limit: searchLimit,
-        windowSec: searchWindow,
-      })
+  const authed = await isKnownSession(kv, sid)
+  const { limit: ipLimit, windowSec: ipWindow } = rateLimitConfig('X_SEARCH', 60, 3600)
+  const { limit: sessLimit, windowSec: sessWindow } = rateLimitConfig('X_SEARCH_SESS', 300, 3600)
+  const rate = await checkRateLimit({
+    kv,
+    prefix: authed ? 'xapi:ratelimit:sess' : 'xapi:ratelimit',
+    ip: authed ? sid : getClientIp(req),
+    limit: authed ? sessLimit : ipLimit,
+    windowSec: authed ? sessWindow : ipWindow,
+  })
   if (!rate.allowed) {
     return sendError(
       res,
       429,
       'proxy_rate_limit',
       'Too many X searches from your network',
-      `Limit is ${searchLimit}/hour per network — wait and retry. The shared monthly spend cap still applies.`,
+      `Limit is ${authed ? sessLimit : ipLimit}/hour${authed ? ' per signed-in session' : ' per network'} — wait and retry. The shared monthly spend cap still applies.`,
     )
   }
 
-  const currentCents = Number((await kv.get(key)) || 0) || 0
-  if (currentCents + plannedCents > capCents) {
+  const preflight = await chargeSpend({ kv, reads: mr, costPerPostUsd: perPostUsd, dryRun: true })
+  if (!preflight.ok) {
+    if (preflight.code === 'spend_store_failed') {
+      return sendError(
+        res,
+        500,
+        'spend_store_missing',
+        'Monthly spend store unreachable',
+        'Vercel KV did not respond. Check KV env vars and retry.',
+      )
+    }
     return sendError(
       res,
       402,
       'spend_cap',
       'Monthly X budget cap reached',
-      `Cap ${capUsd.toFixed(2)} USD reached for ${key.split(':')[1]}. Wait until next month or raise X_SPEND_CAP_USD.`,
+      `Cap ${preflight.capUsd.toFixed(2)} USD reached for ${preflight.period}. Wait until next month or raise X_SPEND_CAP_USD.`,
     )
   }
 
@@ -223,16 +212,11 @@ export default async function handler(req, res) {
 
     const data = await response.json()
 
-    // Spend accounting based on actual posts returned (best-effort).
+    // Record actual posts returned. The X read already happened, so this
+    // always increments (force) — a blown cap flags future calls, it never
+    // drops data that was already paid for.
     const actualCount = Array.isArray(data?.data) ? data.data.length : 0
-    if (actualCount > 0) {
-      const actualCents = Math.ceil(actualCount * perPostUsd * 100)
-      try {
-        await kv.incrby(key, actualCents)
-      } catch {
-        // Non-fatal: proceed, but future calls will still preflight against KV.
-      }
-    }
+    await chargeSpend({ kv, reads: actualCount, costPerPostUsd: perPostUsd, force: true })
 
     const posts = (data.data || []).map((tweet, i) => {
       const user = (data.includes?.users || []).find(u => u.id === tweet.author_id) || {}
