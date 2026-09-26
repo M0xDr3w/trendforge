@@ -6,6 +6,8 @@ export interface XPost {
   likes: number
   retweets: number
   sentiment: number
+  /** True for locally generated sample posts (fictional accounts, invented counts). */
+  sample?: boolean
 }
 
 export interface Cluster {

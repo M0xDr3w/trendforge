@@ -10,7 +10,10 @@ TrendForge ingests X posts (mock or real), clusters them into conversation bucke
 
 ## Run locally (no keys required)
 
-The default experience is fully local and keyless — it ingests a simulated X feed so you can explore clustering, insights, and the forge in under three minutes.
+The default experience is fully local and keyless — it ingests clearly labeled **sample data**
+(fictional `@sample_*` accounts with invented counts, badged `SAMPLE DATA` in the feed) so you can
+explore clustering, insights, and the forge in under three minutes. Sample posts never claim to be
+real X accounts or real engagement.
 
 ```bash
 git clone https://github.com/M0xDr3w/trendforge.git
@@ -38,7 +41,7 @@ npm run build   # tsc + vite production build
 - **Backend:** Vercel serverless functions (Node.js runtime)
   - `api/x-search.js` — secure X recent-search proxy
   - `api/forge-chat.js` — server-side xAI Grok proxy (OpenAI-compatible)
-- **Node:** 22.x
+- **Node:** 24.x (matches the Vercel project runtime)
 
 Domain logic lives as pure, tested helpers in `src/lib/` (clustering, insights, forge templates, analytics, export). `App.tsx` stays as orchestration.
 
@@ -49,6 +52,19 @@ Domain logic lives as pure, tested helpers in `src/lib/` (clustering, insights, 
 The **SYNC REAL X** / **LIVE REAL** actions call the `/api/x-search` serverless proxy, which fetches from X's recent-search API. Real X data is opt-in and gated by a server-side budget:
 
 - The X bearer token lives **only** in server env (`X_BEARER_TOKEN`), never in the client bundle.
+- Both proxies accept **same-origin requests only** — the browser's `Origin`/`Referer` must match
+  the deployment host (override with `APP_ORIGIN` if fronted differently). Bare curl and
+  third-party sites get `origin_forbidden`.
+- Optional owner lockdown: set `APP_ACCESS_TOKEN` server-side and paste the same value in the
+  feed panel's session field (sent as `x-app-token`, kept in `sessionStorage` only). When unset,
+  the proxies stay usable from the app with no login.
+- Per-IP rate limits sit in front of the shared budget — `X_SEARCH_PER_HOUR` (default `60`) and
+  `FORGE_CHAT_PER_HOUR` (default `30`) — enforced with Vercel KV when configured, best-effort
+  in-memory otherwise.
+- `/api/forge-chat` additionally enforces a server-side model allowlist (`FORGE_ALLOWED_MODELS`,
+  default `grok-4.5,grok-4,grok-3`) and caps `max_tokens` at `FORGE_MAX_TOKENS` (default `1000`,
+  absolute ceiling `2000`). Caller-supplied models and token counts outside those bounds are
+  clamped, not honored.
 - The proxy enforces a **monthly spend cap** — `X_SPEND_CAP_USD` (default `$20`) — tracked in Vercel KV (`KV_REST_API_URL`, `KV_REST_API_TOKEN`). When the cap is reached, the proxy returns a structured `spend_cap` error and stops spending until the next month or until you raise the cap. Without KV configured, the cap cannot be enforced and real-search is refused (`spend_store_missing`), so you can't accidentally run uncapped.
 - Prefer an **App-only Bearer Token** (long-lived) for `X_BEARER_TOKEN`. OAuth 2.0 *user* tokens are short-lived and belong to local MCP/`xurl` flows, not this proxy.
 
@@ -112,8 +128,13 @@ Relevant environment variables (all server-side, set in Vercel or `vercel dev`):
 |----------|---------|
 | `X_BEARER_TOKEN` | X recent-search access (App-only bearer) |
 | `X_SPEND_CAP_USD` | Monthly real-X spend cap (default `$20`) |
-| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV store used to enforce the spend cap |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV store used to enforce the spend cap + proxy rate limits |
 | `XAI_API_KEY` | Server-side Grok forge via `/api/forge-chat` |
+| `APP_ACCESS_TOKEN` | Optional: when set, proxy calls must send it as `x-app-token` (owner lockdown; unset = same-origin + rate limits only) |
+| `APP_ORIGIN` | Optional: comma-separated allowed hosts/URLs for the same-origin check (default: derive from request host) |
+| `FORGE_ALLOWED_MODELS` | Optional: comma-separated xAI model allowlist (default `grok-4.5,grok-4,grok-3`) |
+| `FORGE_MAX_TOKENS` | Optional: per-request `max_tokens` cap for `/api/forge-chat` (default `1000`, ceiling `2000`) |
+| `X_SEARCH_PER_HOUR` / `FORGE_CHAT_PER_HOUR` | Optional: per-IP hourly rate limits (defaults `60` / `30`) |
 
 ---
 
