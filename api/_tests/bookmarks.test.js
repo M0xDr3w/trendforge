@@ -44,8 +44,8 @@ vi.mock('@vercel/kv', () => ({
   },
 }))
 
-const { default: handler } = await import('./bookmarks.js')
-const { encryptTokens } = await import('./_lib/session.js')
+const { default: handler } = await import('../bookmarks.js')
+const { encryptTokens } = await import('../_lib/session.js')
 
 const realFetch = globalThis.fetch
 const SECRET = 'test-session-secret-12345'

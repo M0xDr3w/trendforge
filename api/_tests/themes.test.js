@@ -58,9 +58,9 @@ vi.mock('@vercel/kv', () => ({
   },
 }))
 
-const { default: handler } = await import('./themes.js')
-const { encryptTokens } = await import('./_lib/session.js')
-const { discoverThemes } = await import('./_lib/themes.js')
+const { default: handler } = await import('../themes.js')
+const { encryptTokens } = await import('../_lib/session.js')
+const { discoverThemes } = await import('../_lib/themes.js')
 
 const realFetch = globalThis.fetch
 const SECRET = 'test-session-secret-12345'

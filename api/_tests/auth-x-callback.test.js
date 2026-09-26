@@ -17,7 +17,7 @@ vi.mock('@vercel/kv', () => ({
   },
 }))
 
-const { default: handler } = await import('./x-callback.js')
+const { default: handler } = await import('../auth/x-callback.js')
 
 const realFetch = globalThis.fetch
 

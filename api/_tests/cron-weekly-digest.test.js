@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cronWeekKey, dedupeSessionsByUser, digestWeekKey } from './weekly-digest.js'
+import { cronWeekKey, dedupeSessionsByUser, digestWeekKey } from '../cron/weekly-digest.js'
 
 describe('cronWeekKey', () => {
   it('anchors Friday to the preceding Monday', () => {
