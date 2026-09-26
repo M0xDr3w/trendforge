@@ -144,6 +144,10 @@ Relevant environment variables (all server-side, set in Vercel or `vercel dev`):
 | `FORGE_ALLOWED_MODELS` | Optional: comma-separated xAI model allowlist (default `grok-4.5,grok-4,grok-3`) |
 | `FORGE_MAX_TOKENS` | Optional: per-request `max_tokens` cap for `/api/forge-chat` (default `1000`, ceiling `2000`) |
 | `X_SEARCH_PER_HOUR` / `FORGE_CHAT_PER_HOUR` | Optional: per-IP hourly rate limits (defaults `60` / `30`) |
+| `X_SEARCH_SESS_PER_HOUR` / `FORGE_CHAT_SESS_PER_HOUR` | Optional: per-session hourly limits for signed-in callers (defaults `300` / `120`) |
+| `SYNC_SESS_PER_HOUR` | Optional: bookmark syncs per session per hour (default `10`) |
+| `DIGEST_SESS_PER_HOUR` / `THEMES_SESS_PER_HOUR` / `BOOKMARKS_ASK_SESS_PER_HOUR` | Optional: per-session hourly limits for digest generation (`30`), theme discovery (`20`), Grok-assisted search (`30`) |
+| `APP_BASE_URL` | Optional: canonical public base URL for the OAuth callback (default: derived from request headers; trim, no trailing slash) |
 | `X_CLIENT_ID`, `X_CLIENT_SECRET` | X OAuth app credentials for Sign in with X (server only, never the client) |
 | `SESSION_SECRET` | 16+ char secret sealing bookmark sessions server-side (AES-256-GCM + KV) |
 | `CRON_SECRET` | Bearer secret protecting `/api/cron/weekly-digest` |

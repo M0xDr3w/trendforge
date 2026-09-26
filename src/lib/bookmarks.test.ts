@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildBookmarkForgePrompt,
+  fetchBookmarks,
   filterByFolder,
   FIXTURE_BOOKMARKS,
   FIXTURE_DIGEST,
@@ -56,6 +57,24 @@ describe('filterByFolder', () => {
   })
 })
 
+describe('fetchBookmarks', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('requests up to 300 saves to match the merge cap', async () => {
+    let url = ''
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (u: string) => {
+        url = u
+        return { ok: true, json: async () => ({ posts: [], total: 0, folders: [], assisted: false }) } as Response
+      }),
+    )
+    await fetchBookmarks({ limit: 300 })
+    expect(url).toContain('limit=300')
+  })
+})
 describe('buildBookmarkForgePrompt', () => {
   it('requires citations and uses strict numbered format', () => {
     const prompt = buildBookmarkForgePrompt(FIXTURE_BOOKMARKS.slice(0, 3))

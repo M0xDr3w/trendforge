@@ -221,7 +221,7 @@ function App() {
         setAuthUser(status.username ?? null)
         if (status.signedIn) {
           try {
-            const list = await fetchBookmarks({ limit: 100 })
+            const list = await fetchBookmarks({ limit: 300 })
             if (!cancelled) {
               setBookmarkPosts(list.posts)
               setBookmarkFolders(list.folders)
@@ -261,7 +261,7 @@ function App() {
     setSyncingBm(true)
     try {
       const result = await syncBookmarks()
-      const list = await fetchBookmarks({ limit: 100 })
+      const list = await fetchBookmarks({ limit: 300 })
       setBookmarkPosts(prev => mergeBookmarks(prev, list.posts))
       setBookmarkFolders(list.folders)
       setLastBmSync(new Date().toISOString())
@@ -304,7 +304,9 @@ function App() {
     setBookmarkPosts([])
     setBookmarkFolders([])
     setBookmarkThemes([])
+    setActiveFolder('')
     setActiveTheme('')
+    setBmQuery('')
     setDigest(null)
     setCitedIds([])
     toast.info('Signed out — server session destroyed')

@@ -128,6 +128,9 @@ export function decryptTokens(secret, payload) {
 
 /** Public request host for building the OAuth callback URL (works on preview + prod). */
 export function publicBaseUrl(req) {
+  // Explicit override wins (e.g. custom domains or fronted previews).
+  const override = String(process.env.APP_BASE_URL || '').trim().replace(/\/+$/, '')
+  if (override) return override
   const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').split(',')[0].trim()
   const proto = String(req?.headers?.['x-forwarded-proto'] || 'https').split(',')[0].trim()
   return `${proto}://${host}`

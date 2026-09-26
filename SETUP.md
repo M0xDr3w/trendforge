@@ -190,6 +190,11 @@ from its own origin. Set `APP_ACCESS_TOKEN` only for extra lockdown.
 4. Set in Vercel env (Production + Preview), then redeploy — never in the repo:
    `X_CLIENT_ID`, `X_CLIENT_SECRET`, `SESSION_SECRET` (16+ chars), `CRON_SECRET`.
    KV (`KV_REST_API_URL`, `KV_REST_API_TOKEN`) and `XAI_API_KEY` must already be set.
+   Optional abuse controls: per-session hourly caps `SYNC_SESS_PER_HOUR` (default `10`),
+   `DIGEST_SESS_PER_HOUR` (`30`), `THEMES_SESS_PER_HOUR` (`20`),
+   `BOOKMARKS_ASK_SESS_PER_HOUR` (`30`), plus `APP_BASE_URL` to pin the OAuth
+   callback host instead of deriving it from request headers. `X_ALLOWED_USER_IDS`
+   is reserved for a future sign-in allowlist and is not enforced or set.
 5. Optional spend tuning: `X_BOOKMARK_COST_USD`, or `X_USER_OWNS_APP=false` when the X app
    belongs to someone else (bookmark reads cost `$0.005`/post instead of `$0.001`).
 6. Keyless UI tour: open the deployment with `?demo=bookmarks` for badged fixture saves,

@@ -7,6 +7,7 @@ import {
   isKnownSession,
   parseCookies,
   pkceKey,
+  publicBaseUrl,
   sessionKey,
 } from './session.js'
 
@@ -50,6 +51,19 @@ describe('key helpers', () => {
   it('namespaces pkce and session keys', () => {
     expect(pkceKey('s')).toBe('tf:pkce:s')
     expect(sessionKey('s')).toBe('tf:sess:s')
+  })
+})
+
+describe('publicBaseUrl', () => {
+  const req = { headers: { host: 'preview-1.vercel.app', 'x-forwarded-proto': 'https' } }
+  it('prefers APP_BASE_URL trimmed of trailing slashes', () => {
+    process.env.APP_BASE_URL = 'https://custom.example///'
+    expect(publicBaseUrl(req)).toBe('https://custom.example')
+    delete process.env.APP_BASE_URL
+  })
+  it('falls back to request headers', () => {
+    delete process.env.APP_BASE_URL
+    expect(publicBaseUrl(req)).toBe('https://preview-1.vercel.app')
   })
 })
 

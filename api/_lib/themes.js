@@ -15,11 +15,13 @@ const STOPWORDS = new Set(
 
 /** Lowercase alphanumeric tokens, minus stopwords and stubs. */
 export function tokenize(text) {
+  const stem = t => t.replace(/(ing|ed|s)$/, '')
   return String(text || '')
     .toLowerCase()
     .replace(/https?:\/\/\S+/g, ' ')
     .split(/[^a-z0-9]+/)
-    .map(t => t.replace(/(ing|ed|s)$/, ''))
+    .filter(t => t.length >= 3 && !STOPWORDS.has(t))
+    .map(stem)
     .filter(t => t.length >= 3 && !STOPWORDS.has(t))
 }
 

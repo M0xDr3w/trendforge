@@ -17,6 +17,10 @@ describe('tokenize', () => {
     expect(tokenize('The agents are shipping https://x.com/y real products')).toContain('agent')
     expect(tokenize('the and of a to')).toEqual([])
   })
+  it('filters stopwords again after stemming', () => {
+    // "this" stems to "thi" — without a second filter it leaks through.
+    expect(tokenize('this that those these')).toEqual([])
+  })
 })
 
 describe('discoverThemes', () => {
