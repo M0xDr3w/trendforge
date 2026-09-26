@@ -5,6 +5,7 @@
 import { kv } from '@vercel/kv'
 import { loadSession, sessionHint } from './_lib/auth.js'
 import { checkAppToken, clampMaxTokens, isAllowedOrigin, resolveForgeModel } from './_lib/guard.js'
+import { parseStoredPost } from './_lib/posts.js'
 import {
   bookmarksKey,
   buildDigestPrompt,
@@ -14,20 +15,10 @@ import {
   themesKey,
 } from './_lib/spend.js'
 
-function parsePost(value) {
-  try {
-    const p = typeof value === 'string' ? JSON.parse(value) : value
-    if (!p || typeof p.id === 'undefined') return null
-    return { ...p, id: String(p.id) }
-  } catch {
-    return null
-  }
-}
-
 async function readPosts(uid) {
   const stored = (await kv.hgetall(bookmarksKey(uid)).catch(() => null)) || {}
   return Object.values(stored)
-    .map(parsePost)
+    .map(parseStoredPost)
     .filter(Boolean)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
 }

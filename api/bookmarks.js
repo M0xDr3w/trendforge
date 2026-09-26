@@ -5,21 +5,12 @@
 import { kv } from '@vercel/kv'
 import { loadSession, sessionHint } from './_lib/auth.js'
 import { checkAppToken, isAllowedOrigin } from './_lib/guard.js'
+import { parseStoredPost } from './_lib/posts.js'
 import { bookmarksKey, foldersKey, kvConfigured } from './_lib/spend.js'
 import { clampMaxTokens, resolveForgeModel } from './_lib/guard.js'
 import { callXai } from './_lib/spend.js'
 
 const ASSIST_SYSTEM = `You rank saved X posts by relevance to a question. Reply with ONLY a JSON array of the save ids you judge relevant, most relevant first. No prose, no code fences.`
-
-function parsePost(value) {
-  try {
-    const p = typeof value === 'string' ? JSON.parse(value) : value
-    if (!p || typeof p.id === 'undefined') return null
-    return { ...p, id: String(p.id) }
-  } catch {
-    return null
-  }
-}
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -80,7 +71,7 @@ export default async function handler(req, res) {
       hint: 'Vercel KV is unreachable. Retry in a moment.',
     })
   }
-  let posts = Object.values(stored).map(parsePost).filter(Boolean)
+  let posts = Object.values(stored).map(parseStoredPost).filter(Boolean)
 
   if (folder) {
     posts = posts.filter(p => (p.folderIds || []).includes(folder))

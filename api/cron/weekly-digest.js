@@ -6,6 +6,7 @@
 import crypto from 'node:crypto'
 import { kv } from '@vercel/kv'
 import { decryptTokens, requireSessionSecret, sessionKey } from '../_lib/session.js'
+import { parseStoredPost } from '../_lib/posts.js'
 import { refreshSessionTokens } from '../_lib/auth.js'
 import { fetchAllBookmarks, bookmarkCostPerPost } from '../_lib/xapi.js'
 import {
@@ -75,46 +76,93 @@ export default async function handler(req, res) {
     })
   }
 
+  // Load + decrypt every session, then dedupe by X user: one user with N
+  // browser sessions gets exactly one paid sync+digest, not N.
+  const loaded = []
+  for (const full of sessionIds) {
+    const sid = String(full).split(':').pop()
+    let sealed = null
+    try {
+      sealed = await kv.get(sessionKey(sid))
+    } catch {
+      continue
+    }
+    if (!sealed) continue
+    try {
+      const bundle = decryptTokens(secret, sealed)
+      if (bundle?.xUserId) loaded.push({ sid, bundle })
+    } catch {
+      await kv.del(sessionKey(sid)).catch(() => {})
+    }
+  }
+  const users = dedupeSessionsByUser(loaded)
+
   const results = []
-  // No silent user cap: iterate every session, but stop visibly before the
+  // No silent user cap: iterate every user, but stop visibly before the
   // function timeout and report exactly what was (and wasn't) processed.
   const startedAt = Date.now()
   const BUDGET_MS = 50_000
+  const week = cronWeekKey()
   let stoppedEarly = false
-  for (const full of sessionIds) {
+  for (const [uid, entry] of users) {
     if (Date.now() - startedAt > BUDGET_MS) {
       stoppedEarly = true
       break
     }
-    const sid = String(full).split(':').pop()
+    // Idempotency: one digest per user per week. NX-claim the marker; a
+    // claimed week is skipped visibly, and the claim is released only when
+    // processing throws unexpectedly (so a later run can retry).
+    const marker = digestWeekKey(uid, week)
+    let claimed = false
     try {
-      const outcome = await digestOneSession({ sid, secret, apiKey })
-      results.push({ sid: `${sid.slice(0, 6)}…`, ...outcome })
+      claimed = (await kv.set(marker, entry.sid, { nx: true, ex: 8 * 24 * 3600 })) === 'OK'
+    } catch {
+      claimed = false
+    }
+    if (!claimed) {
+      results.push({ uid, ok: true, skipped: 'already-briefed-this-week' })
+      continue
+    }
+    try {
+      const outcome = await digestOneSession({ sid: entry.sid, bundle: entry.bundle, secret, apiKey })
+      results.push({ uid, ...outcome })
     } catch (err) {
-      results.push({ sid: `${sid.slice(0, 6)}…`, ok: false, error: err?.message || 'failed' })
+      await kv.del(marker).catch(() => {})
+      results.push({ uid, ok: false, error: err?.message || 'failed' })
     }
   }
   return res.json({
     ok: true,
     totalSessions: sessionIds.length,
-    processed: results.length,
-    skipped: sessionIds.length - results.length,
+    totalUsers: users.size,
+    processed: results.filter(r => !r.skipped).length,
+    skipped: results.filter(r => r.skipped).length,
     stoppedEarly,
     results,
   })
 }
 
-async function digestOneSession({ sid, secret, apiKey }) {
-  const sealed = await kv.get(sessionKey(sid))
-  if (!sealed) return { ok: false, error: 'session gone' }
-  let bundle
-  try {
-    bundle = decryptTokens(secret, sealed)
-  } catch {
-    await kv.del(sessionKey(sid)).catch(() => {})
-    return { ok: false, error: 'session undecryptable, removed' }
+/** Monday-anchored UTC week key (matches the Monday cron schedule). */
+export function cronWeekKey(date = new Date()) {
+  const t = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7))
+  return t.toISOString().slice(0, 10)
+}
+
+export function digestWeekKey(uid, week) {
+  return `tf:digest:week:${uid}:${week}`
+}
+
+/** First session wins per X user id; stable uid order. */
+export function dedupeSessionsByUser(entries) {
+  const users = new Map()
+  for (const e of entries) {
+    if (!users.has(e.bundle.xUserId)) users.set(e.bundle.xUserId, e)
   }
-  if (!bundle.xUserId) return { ok: false, error: 'no x user id' }
+  return new Map([...users.entries()].sort(([a], [b]) => (a < b ? -1 : 1)))
+}
+
+async function digestOneSession({ sid, bundle, secret, apiKey }) {
 
   if (bundle.refreshToken && Date.now() > (bundle.expiresAt || 0) - 60_000) {
     // Single shared refresh path (KV-locked): concurrent cron/request
@@ -125,13 +173,26 @@ async function digestOneSession({ sid, secret, apiKey }) {
   }
 
   const knownIds = new Set(await kv.hkeys(bookmarksKey(bundle.xUserId)).catch(() => []))
+  const costPerPost = bookmarkCostPerPost()
+  // Budget before paid work: skip the fetch AND the digest when the
+  // remaining cap can't cover a full bounded sync.
+  const preflight = await chargeSpend({
+    kv,
+    reads: SYNC_PAGES * 100,
+    costPerPostUsd: costPerPost,
+    dryRun: true,
+  })
+  if (!preflight.ok) {
+    return { ok: false, error: 'spend_cap', skipped: 'budget-preflight-failed' }
+  }
   const { fresh, fetched } = await fetchAllBookmarks({
     accessToken: bundle.accessToken,
     userId: bundle.xUserId,
     knownIds,
     maxPages: SYNC_PAGES,
   })
-  await chargeSpend({ kv, reads: fetched, costPerPostUsd: bookmarkCostPerPost() })
+  // Record what X actually returned (force: the read already happened).
+  await chargeSpend({ kv, reads: fetched, costPerPostUsd: costPerPost, force: true })
   if (fresh.length > 0) {
     const pipeline = kv.pipeline()
     for (const p of fresh) {
@@ -142,13 +203,7 @@ async function digestOneSession({ sid, secret, apiKey }) {
 
   const stored = (await kv.hgetall(bookmarksKey(bundle.xUserId)).catch(() => null)) || {}
   const posts = Object.values(stored)
-    .map(v => {
-      try {
-        return JSON.parse(v)
-      } catch {
-        return null
-      }
-    })
+    .map(parseStoredPost)
     .filter(Boolean)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
   if (posts.length === 0) return { ok: false, error: 'no bookmarks' }
@@ -162,15 +217,17 @@ async function digestOneSession({ sid, secret, apiKey }) {
     user: buildDigestPrompt(posts, themes),
     maxTokens: clampMaxTokens(900),
   })
-  await kv
-    .set(digestKey(bundle.xUserId), {
+  try {
+    await kv.set(digestKey(bundle.xUserId), {
       text,
       createdAt: new Date().toISOString(),
       postCount: Math.min(40, posts.length),
       model: resolveForgeModel(undefined).model,
       via: 'cron',
     })
-    .catch(() => {})
+  } catch {
+    return { ok: false, error: 'digest_store_failed' }
+  }
   await kv
     .set(metaKey(bundle.xUserId), { lastSyncAt: new Date().toISOString(), totalCount: posts.length })
     .catch(() => {})

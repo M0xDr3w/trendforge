@@ -8,6 +8,7 @@ import crypto from 'node:crypto'
 import { kv } from '@vercel/kv'
 import { loadSession, sessionHint } from './_lib/auth.js'
 import { checkAppToken, clampMaxTokens, isAllowedOrigin, resolveForgeModel } from './_lib/guard.js'
+import { parseStoredPost } from './_lib/posts.js'
 import {
   diffThemeLabels,
   discoverThemes,
@@ -38,16 +39,6 @@ function cleanName(raw, fallback) {
 function trunc(text, n = SAMPLE_CHARS) {
   const t = String(text || '').replace(/\s+/g, ' ').trim()
   return t.length > n ? `${t.slice(0, n)}…` : t
-}
-
-function parsePost(value) {
-  try {
-    const p = typeof value === 'string' ? JSON.parse(value) : value
-    if (!p || typeof p.id === 'undefined') return null
-    return { ...p, id: String(p.id) }
-  } catch {
-    return null
-  }
 }
 
 const LABEL_SYSTEM = `You name and place saved X posts into themes. Reply with ONLY a JSON object, no prose, no code fences.`
@@ -139,7 +130,7 @@ export default async function handler(req, res) {
 
   const stored = (await kv.hgetall(bookmarksKey(uid)).catch(() => null)) || {}
   const posts = Object.values(stored)
-    .map(parsePost)
+    .map(parseStoredPost)
     .filter(Boolean)
     .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
   if (posts.length === 0) {
