@@ -6,6 +6,7 @@ import {
   distinctiveTerms,
   docFrequencies,
   heuristicName,
+  normalizeLabelMap,
   tokenize,
 } from './themes.js'
 
@@ -74,5 +75,23 @@ describe('distinctiveTerms / helpers', () => {
     expect(docFrequencies([new Map([['a', 1]]), new Map([['a', 2], ['b', 1]])]).get('a')).toBe(2)
     expect(clusterSignature(['b', 'a'])).toBe('a|b')
     expect(heuristicName(['agent', 'loop'])).toBe('Agent · Loop')
+  })
+})
+
+describe('normalizeLabelMap', () => {
+  it('accepts object and JSON-string values, drops junk', () => {
+    expect(
+      normalizeLabelMap({
+        a: { name: 'Kept', model: 'grok-4.5' },
+        b: '{"name":"Parsed"}',
+        c: 'not-json',
+        d: null,
+        e: { model: 'no-name' },
+      }),
+    ).toEqual({ a: { name: 'Kept', model: 'grok-4.5' }, b: { name: 'Parsed' } })
+  })
+  it('returns {} for non-maps', () => {
+    expect(normalizeLabelMap(null)).toEqual({})
+    expect(normalizeLabelMap([{ name: 'x' }])).toEqual({})
   })
 })

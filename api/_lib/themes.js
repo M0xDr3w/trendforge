@@ -112,6 +112,26 @@ export function clusterSignature(topTerms) {
   return [...topTerms].sort().join('|')
 }
 
+/** Label-cache entries may come back as objects or JSON strings. */
+export function normalizeLabelMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const out = {}
+  for (const [sig, value] of Object.entries(raw)) {
+    if (!value) continue
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value)
+        if (parsed && typeof parsed.name === 'string') out[sig] = parsed
+      } catch {
+        // Corrupt entry: treated as a cache miss below.
+      }
+    } else if (typeof value === 'object' && typeof value.name === 'string') {
+      out[sig] = value
+    }
+  }
+  return out
+}
+
 export function heuristicName(topTerms) {
   const words = topTerms.slice(0, 3).map(w => w.charAt(0).toUpperCase() + w.slice(1))
   return words.join(' · ') || 'Saves'
