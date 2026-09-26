@@ -1,10 +1,19 @@
-# TrendForge
+# TrendForge — Bookmark Forge
 
-**Real-time X trend radar + content forge.** Detect emerging narratives, gaps, and sentiment shifts on X, then forge original, timely angles, threads, and sparks you can ship — without drowning in the "sea of sameness".
+**Turns what you already save on X into a weekly brief and ready-to-edit threads.** Sign in with X,
+sync your bookmarks, see what you've been saving about, get a Grok weekly brief, and forge
+citation-grounded thread ideas — copy, never auto-post.
 
 **Live:** https://trendforge-opal.vercel.app
 
-TrendForge ingests X posts (mock or real), clusters them into conversation buckets, surfaces volume/sentiment/velocity signals and content gaps, and helps you draft platform-ready copy. It runs happily with **zero keys** on a simulated feed, and upgrades to real X data and LLM-assisted drafting when you configure server-side secrets.
+Alongside bookmarks, TrendForge keeps a secondary "what's moving now" panel: real-time X trend radar
++ content forge. Detect emerging narratives, gaps, and sentiment shifts on X, then forge original,
+timely angles, threads, and sparks you can ship — without drowning in the "sea of sameness".
+
+TrendForge ingests X posts (sample data, real recent search, or your own bookmarks), clusters them
+into conversation buckets, surfaces volume/sentiment/velocity signals and content gaps, and helps you
+draft platform-ready copy. It runs happily with **zero keys** on clearly labeled sample data, and
+upgrades to real X data and LLM-assisted drafting when you configure server-side secrets.
 
 ---
 
@@ -135,6 +144,57 @@ Relevant environment variables (all server-side, set in Vercel or `vercel dev`):
 | `FORGE_ALLOWED_MODELS` | Optional: comma-separated xAI model allowlist (default `grok-4.5,grok-4,grok-3`) |
 | `FORGE_MAX_TOKENS` | Optional: per-request `max_tokens` cap for `/api/forge-chat` (default `1000`, ceiling `2000`) |
 | `X_SEARCH_PER_HOUR` / `FORGE_CHAT_PER_HOUR` | Optional: per-IP hourly rate limits (defaults `60` / `30`) |
+| `X_SEARCH_SESS_PER_HOUR` / `FORGE_CHAT_SESS_PER_HOUR` | Optional: per-session hourly limits for signed-in callers (defaults `300` / `120`) |
+| `SYNC_SESS_PER_HOUR` | Optional: bookmark syncs per session per hour (default `10`) |
+| `DIGEST_SESS_PER_HOUR` / `THEMES_SESS_PER_HOUR` / `BOOKMARKS_ASK_SESS_PER_HOUR` | Optional: per-session hourly limits for digest generation (`30`), theme discovery (`20`), Grok-assisted search (`30`) |
+| `APP_BASE_URL` | Optional: canonical public base URL for the OAuth callback (default: derived from request headers; trim, no trailing slash) |
+| `X_CLIENT_ID`, `X_CLIENT_SECRET` | X OAuth app credentials for Sign in with X (server only, never the client) |
+| `SESSION_SECRET` | 16+ char secret sealing bookmark sessions server-side (AES-256-GCM + KV) |
+| `CRON_SECRET` | Bearer secret protecting `/api/cron/weekly-digest` |
+| `X_BOOKMARK_COST_USD` | Optional: per-post bookmark-read cost (default `$0.001`; use `X_USER_OWNS_APP=false` for `$0.005`) |
+| `X_USER_OWNS_APP` | Set `false` when the X developer app belongs to someone else (bookmark reads cost `$0.005`/post) |
+
+---
+
+## Bookmark Forge (primary input: your own X bookmarks)
+
+- **Sign in with X** (OAuth 2.0 Authorization Code + PKCE; scopes `bookmark.read tweet.read users.read
+  offline.access`) via the Bookmark Forge panel. Tokens stay server-side — encrypted in Vercel KV
+  under an `httpOnly` session cookie — never in the browser bundle, never committed.
+- **Sync** pulls `GET /2/users/:id/bookmarks` (100/page, paginated) plus bookmark folders, dedupes
+  into KV by post id, and charges the shared monthly spend cap (`$0.001`/post when you own the
+  developer app, `$0.005` otherwise). Re-syncs only fetch what's new where possible.
+- **Themes** are discovered from the saves themselves — no folders required (folders still
+  supported as a filter). `POST /api/themes` clusters the pile locally (free, deterministic),
+  then makes **one** batched Grok call that names new clusters and places ungrouped saves
+  (joining existing themes where they fit). Names are cached in KV by cluster signature, so
+  re-syncs only spend Grok tokens on genuinely new clusters; everything else resolves from
+  cache. Each theme carries a name, a count, and links to its posts — tap a theme to filter.
+- **Search** your saves by keyword; append `?ask=` on `/api/bookmarks` for Grok-assisted relevance
+  ranking (needs `XAI_API_KEY`).
+- **Weekly brief**: view in the Digest panel, generate on demand, or let the Monday Vercel Cron
+  (`/api/cron/weekly-digest`, guarded by `CRON_SECRET`) refresh it — organized around the
+  discovered themes. In-app only — no email.
+- **Forge from saves**: cite specific posts, generate thread/post ideas that reference them,
+  grouped by theme, keeping the accept/edit/reject learn loop and Markdown/JSON export.
+  TrendForge **never** posts to X.
+- A valid X session also gates `/api/forge-chat` and `/api/x-search`: signed-in callers skip the
+  per-IP rate bucket (origin check + spend cap still apply to everyone).
+- Demo without keys: open the app with `?demo=bookmarks` for clearly badged fixture bookmarks,
+  folders, and a fixture digest.
+
+### X developer console steps (https://console.x.com)
+
+1. Create/select your app → **User authentication settings** → enable **OAuth 2.0**.
+2. Set **Type of App** to *Web App*.
+3. Add **Callback URI / Redirect URL** for every deployment that signs in:
+   - production: `https://trendforge-opal.vercel.app/api/auth/x-callback`
+   - each preview deployment: `https://<preview-url>.vercel.app/api/auth/x-callback`
+     (Vercel shows the URL on the deployment; add it before testing sign-in there).
+4. Request/confirm scopes: `bookmark.read`, `tweet.read`, `users.read`, `offline.access`.
+5. Copy **Client ID** and **Client Secret** into Vercel env (`X_CLIENT_ID`, `X_CLIENT_SECRET`)
+   for Production + Preview — never into the repo.
+6. Set `SESSION_SECRET` (any 16+ char random string) and `CRON_SECRET` in Vercel env, then redeploy.
 
 ---
 
@@ -157,7 +217,7 @@ trendforge/
 
 ## Contributing
 
-Open source, built in public. Prefer pure functions + tests for domain logic in `src/lib/`. Before opening a PR, run `npm run lint && npm run test && npm run build`. See `AGENTS.md` and `GOALS.md` for operating principles and the ship bar.
+Open source, built in public. Prefer pure functions + tests for domain logic in `src/lib/`. Before opening a PR, run `npm run lint && npm run test && npm run build`. Before anything goes live, work through [VERIFY.md](VERIFY.md) by hand — your own eyes, not the CI badge. See `AGENTS.md` and `GOALS.md` for operating principles and the ship bar.
 
 ## License
 

@@ -179,6 +179,34 @@ Both `/api/x-search` and `/api/forge-chat` enforce, in order:
 No new secrets are required: with `APP_ACCESS_TOKEN` unset, the owner uses the app normally
 from its own origin. Set `APP_ACCESS_TOKEN` only for extra lockdown.
 
+### Bookmark Forge OAuth (https://console.x.com)
+
+1. App → **User authentication settings** → enable **OAuth 2.0**, type *Web App*.
+2. Add callback URLs for **every** deployment that signs in:
+   - `https://trendforge-opal.vercel.app/api/auth/x-callback` (production)
+   - `https://<preview-url>.vercel.app/api/auth/x-callback` (each preview; copy the URL from the
+     Vercel deployment page before testing sign-in there).
+3. Scopes: `bookmark.read`, `tweet.read`, `users.read`, `offline.access`.
+4. Set in Vercel env (Production + Preview), then redeploy — never in the repo:
+   `X_CLIENT_ID`, `X_CLIENT_SECRET`, `SESSION_SECRET` (16+ chars), `CRON_SECRET`.
+   KV (`KV_REST_API_URL`, `KV_REST_API_TOKEN`) and `XAI_API_KEY` must already be set.
+   Optional abuse controls: per-session hourly caps `SYNC_SESS_PER_HOUR` (default `10`),
+   `DIGEST_SESS_PER_HOUR` (`30`), `THEMES_SESS_PER_HOUR` (`20`),
+   `BOOKMARKS_ASK_SESS_PER_HOUR` (`30`), plus `APP_BASE_URL` to pin the OAuth
+   callback host instead of deriving it from request headers. Optional
+   owner-only lock: set `X_ALLOWED_USER_IDS` to your numeric X user id
+   (comma-separated for several). While set, only listed ids can sign in —
+   anyone else is bounced with a "private instance" message and their tokens
+   are never stored — and sessions created before the lock stop working on
+   the paid routes (sync, digest, themes, assisted search). Unset or empty
+   means open: any X account can sign in. Find your id via the X console or
+   `users/me` on your own token. Do NOT set it in Vercel until the main
+   OAuth flow is proven working.
+5. Optional spend tuning: `X_BOOKMARK_COST_USD`, or `X_USER_OWNS_APP=false` when the X app
+   belongs to someone else (bookmark reads cost `$0.005`/post instead of `$0.001`).
+6. Keyless UI tour: open the deployment with `?demo=bookmarks` for badged fixture saves,
+   folders, and digest — no credentials involved.
+
 ---
 
 ## 6. Dashboard only (mock feed)

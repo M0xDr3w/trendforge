@@ -62,7 +62,7 @@ export function FeedPanel({
     <div>
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <HudLabel className="block text-xs tracking-[0.15em]">Live X feed</HudLabel>
+          <HudLabel className="block text-xs tracking-[0.15em]">Live X feed · what&apos;s moving now</HudLabel>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
             <span>
               {posts.length} posts · {isRunning ? 'ingesting' : 'paused'}

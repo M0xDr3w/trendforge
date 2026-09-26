@@ -3,6 +3,29 @@ import { toast } from 'sonner'
 import { motion } from 'framer-motion'
 import { config } from './lib/config'
 import { loadAppToken, saveAppToken } from './lib/accessToken'
+import {
+  buildBookmarkForgePrompt,
+  discoverThemes as discoverBookmarkThemes,
+  fetchBookmarks,
+  fetchDigest,
+  fetchThemes,
+  filterByFolder,
+  FIXTURE_BOOKMARKS,
+  FIXTURE_DIGEST,
+  FIXTURE_FOLDERS,
+  FIXTURE_THEMES,
+  generateDigest,
+  getAuthStatus,
+  logout as logoutSession,
+  mergeBookmarks,
+  searchBookmarks,
+  startLogin,
+  syncBookmarks,
+  type BookmarkFolder,
+  type BookmarkPost,
+  type BookmarkTheme,
+  type WeeklyDigest,
+} from './lib/bookmarks'
 import { computeClusters, buildVolumeSnapshot } from './lib/clusters'
 import { detectInsights } from './lib/narrative'
 import { generateSparks } from './lib/insights'
@@ -48,6 +71,8 @@ import {
 } from './lib/preferences'
 import { Header } from './components/Header'
 import { FeedPanel } from './components/FeedPanel'
+import { BookmarksPanel } from './components/BookmarksPanel'
+import { DigestPanel } from './components/DigestPanel'
 import { ClusterPanel } from './components/ClusterPanel'
 import { InsightsPanel } from './components/InsightsPanel'
 import { ForgePanel } from './components/ForgePanel'
@@ -80,6 +105,28 @@ function App() {
   const [lastXApiError, setLastXApiError] = useState<XApiError | null>(null)
   const [xApiBannerDismissed, setXApiBannerDismissed] = useState(false)
   const [appToken, setAppToken] = useState(() => loadAppToken())
+  // --- Bookmark Forge state ---
+  const [demoBookmarks] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('demo') === 'bookmarks',
+  )
+  const [authChecking, setAuthChecking] = useState(true)
+  const [signedIn, setSignedIn] = useState(false)
+  const [authUser, setAuthUser] = useState<string | null>(null)
+  const [bookmarkPosts, setBookmarkPosts] = useState<BookmarkPost[]>([])
+  const [bookmarkFolders, setBookmarkFolders] = useState<BookmarkFolder[]>([])
+  const [bookmarkThemes, setBookmarkThemes] = useState<BookmarkTheme[]>([])
+  const [activeFolder, setActiveFolder] = useState('')
+  const [activeTheme, setActiveTheme] = useState('')
+  const [bmQuery, setBmQuery] = useState('')
+  const [syncingBm, setSyncingBm] = useState(false)
+  const [discoveringBm, setDiscoveringBm] = useState(false)
+  const [lastBmSync, setLastBmSync] = useState<string | null>(null)
+  const [digest, setDigest] = useState<WeeklyDigest | null>(null)
+  const [digestLoading, setDigestLoading] = useState(false)
+  const [citedIds, setCitedIds] = useState<string[]>([])
+  const [bmForging, setBmForging] = useState(false)
   const [radars, setRadars] = useState<SavedRadar[]>(() =>
     loadRadars(config.defaultQueries, config.maxRadars),
   )
@@ -154,6 +201,193 @@ function App() {
   useEffect(() => {
     saveAppToken(appToken)
   }, [appToken])
+
+  // Bookmark Forge bootstrap: fixtures in demo mode, real session otherwise.
+  useEffect(() => {
+    if (demoBookmarks) {
+      setBookmarkPosts(FIXTURE_BOOKMARKS)
+      setBookmarkFolders(FIXTURE_FOLDERS)
+      setBookmarkThemes(FIXTURE_THEMES)
+      setDigest(FIXTURE_DIGEST)
+      setLastBmSync(new Date().toISOString())
+      setAuthChecking(false)
+      return
+    }
+    let cancelled = false
+    getAuthStatus()
+      .then(async status => {
+        if (cancelled) return
+        setSignedIn(status.signedIn)
+        setAuthUser(status.username ?? null)
+        if (status.signedIn) {
+          try {
+            const list = await fetchBookmarks({ limit: 300 })
+            if (!cancelled) {
+              setBookmarkPosts(list.posts)
+              setBookmarkFolders(list.folders)
+              setLastBmSync(new Date().toISOString())
+            }
+          } catch {
+            // Stay signed in; the panel shows the empty state with hints.
+          }
+          try {
+            const snapshot = await fetchThemes()
+            if (!cancelled) setBookmarkThemes(snapshot.themes)
+          } catch {
+            // No themes yet — the panel offers discovery.
+          }
+          try {
+            const d = await fetchDigest()
+            if (!cancelled) setDigest(d)
+          } catch {
+            // No digest yet — panel offers to generate one.
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setAuthChecking(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [demoBookmarks])
+
+  // Surface OAuth redirect outcomes (?auth=ok|denied|private), then strip
+  // the parameter so refreshes don't re-toast.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const auth = params.get('auth')
+      if (!auth) return
+      if (auth === 'ok') toast.success('Signed in with X')
+      else if (auth === 'denied') toast.info('Sign-in cancelled at X')
+      else if (auth === 'private') {
+        toast.error('This TrendForge instance is private', {
+          description: 'The owner limits access to approved X accounts.',
+          duration: 8000,
+        })
+      }
+      params.delete('auth')
+      const query = params.toString()
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+      )
+    } catch {
+      // Non-browser or history unavailable — the panel states stand alone.
+    }
+  }, [])
+
+  const handleBmSync = useCallback(async () => {
+    if (demoBookmarks) {
+      toast.info('Demo mode — fixtures only, no X sync')
+      return
+    }
+    setSyncingBm(true)
+    try {
+      const result = await syncBookmarks()
+      const list = await fetchBookmarks({ limit: 300 })
+      setBookmarkPosts(prev => mergeBookmarks(prev, list.posts))
+      setBookmarkFolders(list.folders)
+      setLastBmSync(new Date().toISOString())
+      if (result.capReached) {
+        toast.warning(`Synced bookmarks — monthly cap reached`, {
+          description: result.capHint || 'Posts were kept. Raise X_SPEND_CAP_USD in Vercel env.',
+          duration: 8000,
+        })
+      } else {
+        toast.success(`Synced bookmarks`, {
+          description: `${result.fetched} read · ${result.newPosts} new · $${result.costPerPostUsd ?? 0.001}/post spend-tracked`,
+        })
+      }
+      // Fold new saves into themes: cached labels keep this to one small
+      // Grok call covering only genuinely new clusters.
+      if (bookmarkThemes.length > 0 && result.newPosts > 0) {
+        try {
+          const snapshot = await discoverBookmarkThemes()
+          setBookmarkThemes(snapshot.themes)
+        } catch {
+          // Themes refresh is best-effort; the panel keeps the old snapshot.
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Bookmark sync failed', {
+        description: (err as { hint?: string })?.hint,
+        duration: 8000,
+      })
+    } finally {
+      setSyncingBm(false)
+    }
+  }, [demoBookmarks, bookmarkThemes.length])
+
+  const handleBmLogout = useCallback(async () => {
+    try {
+      await logoutSession()
+    } catch {}
+    setSignedIn(false)
+    setAuthUser(null)
+    setBookmarkPosts([])
+    setBookmarkFolders([])
+    setBookmarkThemes([])
+    setActiveFolder('')
+    setActiveTheme('')
+    setBmQuery('')
+    setDigest(null)
+    setCitedIds([])
+    toast.info('Signed out — server session destroyed')
+  }, [])
+
+  const runDiscoverThemes = useCallback(async () => {
+    if (demoBookmarks) {
+      toast.info('Demo mode — fixture themes only')
+      return
+    }
+    setDiscoveringBm(true)
+    try {
+      const snapshot = await discoverBookmarkThemes()
+      setBookmarkThemes(snapshot.themes)
+      const fresh = snapshot.themes.length - snapshot.grokLabeled
+      toast.success(`Discovered ${snapshot.themes.length} themes`, {
+        description:
+          snapshot.grokLabeled > 0
+            ? `${snapshot.grokLabeled} Grok-named · labels cached, re-syncs stay cheap`
+            : `${fresh} heuristic-named (Grok unavailable) · cached for next time`,
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Theme discovery failed', {
+        description: (err as { hint?: string })?.hint,
+        duration: 8000,
+      })
+    } finally {
+      setDiscoveringBm(false)
+    }
+  }, [demoBookmarks])
+
+  const handleToggleCite = useCallback((id: string) => {
+    setCitedIds(prev => (prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id].slice(0, 8)))
+  }, [])
+
+  const handleGenerateDigest = useCallback(async () => {
+    if (demoBookmarks) {
+      toast.info('Demo mode — showing fixture digest')
+      return
+    }
+    setDigestLoading(true)
+    try {
+      const d = await generateDigest()
+      setDigest(d)
+      toast.success('Weekly brief ready', { description: `${d.postCount} saves briefed` })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Digest generation failed', {
+        description: (err as { hint?: string })?.hint,
+        duration: 8000,
+      })
+    } finally {
+      setDigestLoading(false)
+    }
+  }, [demoBookmarks])
 
   useEffect(() => {
     if (lastForge) saveLastForge(lastForge)
@@ -320,6 +554,44 @@ function App() {
     },
     [customTopic, selectedCluster, forgeMode, forgeModel, forgeProvider],
   )
+
+  const handleBookmarkForge = useCallback(async () => {
+    if (forgeInFlightRef.current || bmForging) return
+    const pool = filterByFolder(bookmarkPosts, activeFolder)
+    const themeIds = activeTheme
+      ? (bookmarkThemes.find(t => t.id === activeTheme)?.postIds || [])
+      : null
+    const themed = themeIds ? pool.filter(p => themeIds.includes(p.id)) : pool
+    const searched = searchBookmarks(themed, bmQuery)
+    const cited = searched.filter(p => citedIds.includes(p.id))
+    const sources = (cited.length > 0 ? cited : searched).slice(0, 8)
+    if (sources.length === 0) {
+      toast.info('Nothing to forge from — sync or clear filters first')
+      return
+    }
+    forgeInFlightRef.current = true
+    setBmForging(true)
+    setLlmLoading(true)
+    try {
+      const prompt = buildBookmarkForgePrompt(sources, undefined, bookmarkThemes)
+      const response = await callForgeLlm(defaultsForProvider('grok').url, prompt, {
+        stream: false,
+        apiKey: forgeApiKey,
+        model: forgeModel,
+      })
+      const ideas = parseForgeResponse(response)
+      commitForgeResult(ideas, 'llm')
+      navigator.clipboard?.writeText(ideas.join('\n\n')).catch(() => {})
+      toast.success('Forged from your saves', { description: 'Each idea cites its source saves · human gate below' })
+    } catch (err) {
+      const formatted = formatForgeLlmError(err)
+      toast.error(formatted.title, { description: formatted.description, duration: 8000 })
+    } finally {
+      setLlmLoading(false)
+      setBmForging(false)
+      forgeInFlightRef.current = false
+    }
+  }, [bookmarkPosts, activeFolder, activeTheme, bookmarkThemes, bmQuery, citedIds, bmForging, forgeApiKey, forgeModel, commitForgeResult])
 
   const forge = useCallback(async () => {
     // Block re-entry so rapid taps can't launch overlapping LLM requests.
@@ -817,6 +1089,47 @@ Tags: trendforge,signals,forge`).catch(() => {})
           </motion.div>
 
           {/* Volume chart removed for MVP freeze */}
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <motion.div className="lg:col-span-7" variants={sectionVariants}>
+            <BookmarksPanel
+              signedIn={signedIn}
+              username={authUser}
+              authChecking={authChecking}
+              demoMode={demoBookmarks}
+              posts={bookmarkPosts}
+              folders={bookmarkFolders}
+              themes={bookmarkThemes}
+              activeFolder={activeFolder}
+              activeTheme={activeTheme}
+              query={bmQuery}
+              syncing={syncingBm}
+              discovering={discoveringBm}
+              lastSync={lastBmSync}
+              citedIds={citedIds}
+              forging={bmForging}
+              onLogin={startLogin}
+              onLogout={handleBmLogout}
+              onSync={handleBmSync}
+              onDiscoverThemes={runDiscoverThemes}
+              onFolderChange={setActiveFolder}
+              onThemeChange={setActiveTheme}
+              onQueryChange={setBmQuery}
+              onToggleCite={handleToggleCite}
+              onForgeFromBookmarks={handleBookmarkForge}
+            />
+          </motion.div>
+
+          <motion.div className="lg:col-span-5" variants={sectionVariants}>
+            <DigestPanel
+              digest={digest}
+              loading={digestLoading}
+              demoMode={demoBookmarks}
+              canGenerate={demoBookmarks || (signedIn && bookmarkPosts.length > 0)}
+              onGenerate={handleGenerateDigest}
+            />
+          </motion.div>
         </div>
       </motion.div>
 
