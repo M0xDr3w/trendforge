@@ -55,6 +55,9 @@ export interface SyncResult {
   total: number
   folders: number
   costPerPostUsd?: number
+  /** True when this sync pushed spend over the monthly cap (data kept). */
+  capReached?: boolean
+  capHint?: string
 }
 
 export interface BookmarkListResult {

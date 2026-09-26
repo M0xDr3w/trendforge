@@ -265,9 +265,16 @@ function App() {
       setBookmarkPosts(prev => mergeBookmarks(prev, list.posts))
       setBookmarkFolders(list.folders)
       setLastBmSync(new Date().toISOString())
-      toast.success(`Synced bookmarks`, {
-        description: `${result.newPosts} new · ${result.total} total · $${result.costPerPostUsd ?? 0.001}/post spend-tracked`,
-      })
+      if (result.capReached) {
+        toast.warning(`Synced bookmarks — monthly cap reached`, {
+          description: result.capHint || 'Posts were kept. Raise X_SPEND_CAP_USD in Vercel env.',
+          duration: 8000,
+        })
+      } else {
+        toast.success(`Synced bookmarks`, {
+          description: `${result.newPosts} new · ${result.total} total · $${result.costPerPostUsd ?? 0.001}/post spend-tracked`,
+        })
+      }
       // Fold new saves into themes: cached labels keep this to one small
       // Grok call covering only genuinely new clusters.
       if (bookmarkThemes.length > 0 && result.newPosts > 0) {

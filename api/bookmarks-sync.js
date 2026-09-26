@@ -5,7 +5,7 @@
 
 import { kv } from '@vercel/kv'
 import { loadSession, sessionHint } from './_lib/auth.js'
-import { checkAppToken, isAllowedOrigin } from './_lib/guard.js'
+import { checkAppToken, checkRateLimit, isAllowedOrigin, rateLimitConfig } from './_lib/guard.js'
 import { bookmarkCostPerPost, fetchAllBookmarks, fetchBookmarkFolders } from './_lib/xapi.js'
 import {
   bookmarksKey,
@@ -62,12 +62,43 @@ export default async function handler(req, res) {
     })
   }
 
+  // Per-session sync budget: each sync can burn up to MAX_PAGES×100 reads
+  // plus a folder listing, so anonymous-style unlimited syncing is out.
+  const { limit: syncLimit, windowSec: syncWindow } = rateLimitConfig('SYNC_SESS', 10, 3600)
+  const syncRate = await checkRateLimit({
+    kv,
+    prefix: 'bm:ratelimit:sess',
+    ip: session.sid,
+    limit: syncLimit,
+    windowSec: syncWindow,
+  })
+  if (!syncRate.allowed) {
+    return res.status(429).json({
+      error: 'Bookmark sync rate limit exceeded',
+      code: 'sync_rate_limit',
+      hint: `Sync is limited to ${syncLimit}/hour per session — the last sync already stored everything new.`,
+    })
+  }
+
   const knownIds = new Set(await kv.hkeys(bookmarksKey(bundle.xUserId)).catch(() => []))
   const costPerPost = bookmarkCostPerPost()
-  // Preflight the worst case (MAX_PAGES × 100) so a sync never starts when
-  // the remaining budget can't cover it; the post-sync charge uses actuals.
-  const preflight = await chargeSpend({ kv, reads: MAX_PAGES * 100, costPerPostUsd: costPerPost, dryRun: true })
+  // Preflight the worst case (MAX_PAGES × 100 + one folder listing) so a
+  // sync never starts when the remaining budget can't cover it; the
+  // post-sync charge records actuals.
+  const preflight = await chargeSpend({
+    kv,
+    reads: MAX_PAGES * 100 + 1,
+    costPerPostUsd: costPerPost,
+    dryRun: true,
+  })
   if (!preflight.ok) {
+    if (preflight.code === 'spend_store_failed') {
+      return res.status(500).json({
+        error: 'Spend store unreachable',
+        code: 'spend_store_failed',
+        hint: 'Vercel KV did not respond. Check KV env vars and retry.',
+      })
+    }
     return res.status(402).json({
       error: 'Monthly X budget cap reached',
       code: 'spend_cap',
@@ -109,14 +140,27 @@ export default async function handler(req, res) {
     })
   }
 
-  const charged = await chargeSpend({ kv, reads: fetched, costPerPostUsd: costPerPost })
-  if (!charged.ok) {
-    return res.status(402).json({
-      error: 'Monthly X budget cap reached',
-      code: 'spend_cap',
-      hint: 'Cap reached mid-sync. Already-fetched posts were kept; raise X_SPEND_CAP_USD to continue.',
-    })
+  let folders = []
+  let foldersReads = 0
+  try {
+    folders = await fetchBookmarkFolders({ accessToken: bundle.accessToken, userId: bundle.xUserId })
+    foldersReads = 1
+    if (folders.length > 0) {
+      await kv.set(foldersKey(bundle.xUserId), folders).catch(() => {})
+    }
+  } catch {
+    folders = (await kv.get(foldersKey(bundle.xUserId)).catch(() => null)) || []
   }
+
+  // The X reads already happened: always record actuals (force) and always
+  // persist what X returned. A blown cap is reported as a flag on the
+  // result — never as dropped posts or unrecorded spend.
+  const charged = await chargeSpend({
+    kv,
+    reads: fetched + foldersReads,
+    costPerPostUsd: costPerPost,
+    force: true,
+  })
 
   if (fresh.length > 0) {
     const pipeline = kv.pipeline()
@@ -124,16 +168,6 @@ export default async function handler(req, res) {
       pipeline.hset(bookmarksKey(bundle.xUserId), { [p.id]: JSON.stringify(p) })
     }
     await pipeline.exec().catch(() => {})
-  }
-
-  let folders = []
-  try {
-    folders = await fetchBookmarkFolders({ accessToken: bundle.accessToken, userId: bundle.xUserId })
-    if (folders.length > 0) {
-      await kv.set(foldersKey(bundle.xUserId), folders).catch(() => {})
-    }
-  } catch {
-    folders = (await kv.get(foldersKey(bundle.xUserId)).catch(() => null)) || []
   }
 
   const total = knownIds.size + fresh.length
@@ -149,5 +183,9 @@ export default async function handler(req, res) {
     folders: folders.length,
     costPerPostUsd: costPerPost,
     spendCapUsd: spendCapCents() / 100,
+    capReached: !charged.ok,
+    ...(charged.ok
+      ? {}
+      : { capHint: 'Monthly X budget cap reached by this sync. Already-fetched posts were kept; raise X_SPEND_CAP_USD.' }),
   })
 }

@@ -71,6 +71,11 @@ export function BookmarksPanel({
   }, [posts, activeFolder, activeTheme, themes, query])
 
   const canDiscover = demoMode || signedIn
+  // Folder chips stay hidden until some save actually carries folder
+  // membership. Nothing fills folderIds today (folder contents would cost an
+  // extra X read per folder per sync), so showing the filter would only ever
+  // return zero posts — the chips appear the moment membership exists.
+  const hasFolderMembership = posts.some(p => (p.folderIds || []).length > 0)
 
   return (
     <Panel glow padding="md">
@@ -190,7 +195,7 @@ export function BookmarksPanel({
         )}
       </div>
 
-      {folders.length > 0 && (
+      {hasFolderMembership && folders.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-1.5" role="tablist" aria-label="Bookmark folders">
           <NeoButton
             size="xs"
