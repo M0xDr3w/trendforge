@@ -4,7 +4,7 @@
 
 import { kv } from '@vercel/kv'
 import { loadSession, sessionHint } from './_lib/auth.js'
-import { checkAppToken, clampMaxTokens, isAllowedOrigin, resolveForgeModel } from './_lib/guard.js'
+import { checkAppToken, checkRateLimit, clampMaxTokens, getAllowedModels, isAllowedOrigin, rateLimitConfig, resolveForgeModel } from './_lib/guard.js'
 import { parseStoredPost } from './_lib/posts.js'
 import {
   bookmarksKey,
@@ -80,12 +80,39 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed', code: 'method_not_allowed' })
   }
 
+  // Digest generation spends the owner's xAI quota: bound it per session.
+  const { limit: digestLimit, windowSec: digestWindow } = rateLimitConfig('DIGEST_SESS', 30, 3600)
+  const digestRate = await checkRateLimit({
+    kv,
+    prefix: 'digest:ratelimit:sess',
+    ip: session.sid,
+    limit: digestLimit,
+    windowSec: digestWindow,
+  })
+  if (!digestRate.allowed) {
+    return res.status(429).json({
+      error: 'Digest rate limit exceeded',
+      code: 'digest_rate_limit',
+      hint: `Briefs are limited to ${digestLimit}/hour per session — the stored brief is served from GET with no limit.`,
+    })
+  }
+
   const apiKey = String(process.env.XAI_API_KEY || '').trim()
   if (!apiKey) {
     return res.status(503).json({
       error: 'XAI_API_KEY not configured',
       code: 'missing_xai_key',
       hint: 'Set XAI_API_KEY in Vercel env (Production + Preview), then redeploy.',
+    })
+  }
+
+  // Loud 400 for an explicitly disallowed model, matching forge-chat.
+  const { model: digestModel, allowed: digestModelAllowed } = resolveForgeModel(req.body?.model)
+  if (!digestModelAllowed) {
+    return res.status(400).json({
+      error: `Model not allowed: ${String(req.body?.model).slice(0, 80)}`,
+      code: 'invalid_model',
+      hint: `Allowed models: ${getAllowedModels().join(', ')} (FORGE_ALLOWED_MODELS). Omit model for the server default.`,
     })
   }
 
@@ -106,7 +133,7 @@ export default async function handler(req, res) {
   try {
     text = await callXai({
       apiKey,
-      model: resolveForgeModel(req.body?.model).model,
+      model: digestModel,
       system: 'You are a SpaceXAI briefing writer. Reply in Markdown.',
       user: buildDigestPrompt(posts, themes),
       maxTokens: clampMaxTokens(req.body?.max_tokens ?? 900),
@@ -124,8 +151,16 @@ export default async function handler(req, res) {
     text,
     createdAt: new Date().toISOString(),
     postCount: Math.min(40, posts.length),
-    model: resolveForgeModel(req.body?.model).model,
+    model: digestModel,
   }
-  await kv.set(digestKey(uid), digest).catch(() => {})
+  try {
+    await kv.set(digestKey(uid), digest)
+  } catch {
+    return res.status(500).json({
+      error: 'Could not store digest',
+      code: 'digest_store_failed',
+      hint: 'The brief was generated but Vercel KV is unreachable. Retry generation.',
+    })
+  }
   return res.json(digest)
 }

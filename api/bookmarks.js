@@ -4,7 +4,7 @@
 
 import { kv } from '@vercel/kv'
 import { loadSession, sessionHint } from './_lib/auth.js'
-import { checkAppToken, isAllowedOrigin } from './_lib/guard.js'
+import { checkAppToken, checkRateLimit, isAllowedOrigin, rateLimitConfig } from './_lib/guard.js'
 import { parseStoredPost } from './_lib/posts.js'
 import { bookmarksKey, foldersKey, kvConfigured } from './_lib/spend.js'
 import { clampMaxTokens, resolveForgeModel } from './_lib/guard.js'
@@ -58,7 +58,7 @@ export default async function handler(req, res) {
 
   const q = String(req.query?.q || '').trim().toLowerCase()
   const folder = String(req.query?.folder || '').trim()
-  const limit = Math.min(200, Math.max(1, Number.parseInt(req.query?.limit, 10) || 50))
+  const limit = Math.min(300, Math.max(1, Number.parseInt(req.query?.limit, 10) || 50))
   const ask = String(req.query?.ask || '').trim()
 
   let stored
@@ -89,8 +89,24 @@ export default async function handler(req, res) {
   const total = Object.keys(stored).length
 
   // Grok-assisted relevance: rank the (already keyword-filtered) subset.
+  // Each assist call spends the owner's xAI quota: bound it per session.
   let assisted = false
   if (ask && posts.length > 0) {
+    const { limit: askLimit, windowSec: askWindow } = rateLimitConfig('BOOKMARKS_ASK_SESS', 30, 3600)
+    const askRate = await checkRateLimit({
+      kv,
+      prefix: 'bookmarks:ask:ratelimit:sess',
+      ip: session.sid,
+      limit: askLimit,
+      windowSec: askWindow,
+    })
+    if (!askRate.allowed) {
+      return res.status(429).json({
+        error: 'Assisted search rate limit exceeded',
+        code: 'ask_rate_limit',
+        hint: `Grok-assisted search is limited to ${askLimit}/hour per session — plain keyword search has no limit.`,
+      })
+    }
     const apiKey = String(process.env.XAI_API_KEY || '').trim()
     if (!apiKey) {
       return res.status(503).json({
