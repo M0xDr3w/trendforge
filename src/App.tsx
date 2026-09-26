@@ -299,7 +299,7 @@ function App() {
         })
       } else {
         toast.success(`Synced bookmarks`, {
-          description: `${result.newPosts} new · ${result.total} total · $${result.costPerPostUsd ?? 0.001}/post spend-tracked`,
+          description: `${result.fetched} read · ${result.newPosts} new · $${result.costPerPostUsd ?? 0.001}/post spend-tracked`,
         })
       }
       // Fold new saves into themes: cached labels keep this to one small

@@ -217,7 +217,7 @@ trendforge/
 
 ## Contributing
 
-Open source, built in public. Prefer pure functions + tests for domain logic in `src/lib/`. Before opening a PR, run `npm run lint && npm run test && npm run build`. See `AGENTS.md` and `GOALS.md` for operating principles and the ship bar.
+Open source, built in public. Prefer pure functions + tests for domain logic in `src/lib/`. Before opening a PR, run `npm run lint && npm run test && npm run build`. Before anything goes live, work through [VERIFY.md](VERIFY.md) by hand — your own eyes, not the CI badge. See `AGENTS.md` and `GOALS.md` for operating principles and the ship bar.
 
 ## License
 
