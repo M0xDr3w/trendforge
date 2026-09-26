@@ -79,9 +79,14 @@ export default async function handler(req, res) {
     me = null
   }
 
-  // Reuse an existing session id when the browser already has one.
-  let sid = getSessionId(req)
-  if (!sid) sid = newSessionId()
+  // Always mint a fresh session id on login (fixation defense): if the
+  // browser arrived with a pre-login tf_session — planted or stale — its KV
+  // record is destroyed so it can never become an authenticated session.
+  const oldSid = getSessionId(req)
+  if (oldSid) {
+    await kv.del(sessionKey(oldSid)).catch(() => {})
+  }
+  const sid = newSessionId()
   // Avoid sealing a crash blob: validate the round-trip in memory first.
   const bundle = {
     accessToken: tokens.access_token,
